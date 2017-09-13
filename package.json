@@ -2,7 +2,7 @@
   "name": "zentty-client",
   "version": "0.0.1",
   "description": "Official Zentty JavaScript Client",
-  "main": "build/Release/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "babel src --presets babel-preset-es2015,stage-2 --out-dir dist",
     "browser-build": "browserify src/index.js -o browser-dist/zentty-client.js -t [ babelify --presets [ es2015 stage-2 ] ]",
