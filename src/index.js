@@ -12,7 +12,30 @@ const slice = (file, start, end) => {
     return slice.bind(file)(start, end);
 };
 
+const createClient = (uri, auth) => {
+    const networkInterface = createNetworkInterface({uri});
+    
+    networkInterface.use([{
+        applyMiddleware: (req, next) => {
+            if (auth !== null) {
+                if (!req.options.headers) {
+                    req.options.headers = {};  // Create the header object if needed.
+                }
+                req.options.headers.authorization = 'Basic ' + auth;
+            }
+            next();
+        }
+    }]);
+    
+    return new ApolloClient({
+        fetchPolicy: 'network-only',
+        networkInterface
+    });
+};
+
 class ZenttyClient {
+
+    
     constructor(cfg = {}) {
         this.auth = null;
         if (cfg.sessionCode) {
@@ -21,38 +44,26 @@ class ZenttyClient {
             this.auth = this.getStoredToken();
         }
         
-        const uri = cfg.uri || null;
+        this.uri = cfg.uri || null;
         
-        if (uri === null) {
+        if (this.uri === null) {
             throw new Error("EntityModelClient must contain a server uri");
         }
         
-        const networkInterface = createNetworkInterface({uri});
-        
-        networkInterface.use([{
-            applyMiddleware: (req, next) => {
-                if (this.auth !== null) {
-                    if (!req.options.headers) {
-                        req.options.headers = {};  // Create the header object if needed.
-                    }
-                    req.options.headers.authorization = 'Basic ' + this.auth;
-                }
-                next();
-            }
-        }]);
-        
-        this.client = new ApolloClient({
-            networkInterface
-        });
+        this.client = createClient(this.uri, this.auth);
+    }
+    
+    // Since apollo-client has no way to clear the cache, we can free memory by
+    // creating a new apollo client
+    clearCache () {
+        this.client = createClient(this.uri, this.auth);
     }
     
     getStoredToken () {
-        try {
-            if (typeof localStorage !== 'undefined') {
-                return localStorage.getItem('auth_token');
-            }
-        } catch (ex) {
-            console.error(ex);
+        if (typeof localStorage !== 'undefined') {
+            return localStorage.getItem('auth_token') || null;
+        } else {
+            return null;
         }
     }
     
@@ -70,12 +81,17 @@ class ZenttyClient {
         }
     }
     
-    getSessionCode () {
+    getAuth () {
         if (this.auth === null) {
             this.auth = this.getStoredToken();
         }
         
         return this.auth;
+    }
+    
+    setAuth (authCode) {
+        this.auth = authCode;
+        this.setStoredToken(this.auth);
     }
     
     setSessionCode (sessionCode) {
@@ -86,6 +102,7 @@ class ZenttyClient {
             this.auth = base64.encode(sessionCode + ':');
             this.setStoredToken(this.auth);
         }
+        this.clearCache();
     }
     
     /**
