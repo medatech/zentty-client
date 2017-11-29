@@ -105,6 +105,14 @@ class ZenttyClient {
         this.clearCache();
     }
     
+    mutate (mutation) {
+        return this.client.mutate(mutation);
+    }
+    
+    query (query) {
+        return this.client.query(query);
+    }
+    
     /**
      * params {
      *  username: String!
@@ -113,46 +121,35 @@ class ZenttyClient {
      *  password: String!
      * }
      */
-    registerUser (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.mutate({
-                mutation: gql`
-                    mutation registerUser($username: String!, $email: Email!, $name: String!, $password: String!) {
-                        registerUser(
-                            user: {
-                                username: $username,
-                                email: $email,
-                                name: $name,
-                                password: $password
-                            }
-                        ) {
-                            user {
-                                _id
-                                username
-                                email
-                                name
-                                active
-                                registered
-                                avatarUrl
-                            }
-                            errors {
-                                field
-                                message
-                            }
+    async registerUser (params) {
+        const { data: { registerUser: user }} = await this.client.mutate({
+            mutation: gql`
+                mutation registerUser($username: String!, $email: Email!, $name: String!, $password: String!) {
+                    registerUser(
+                        user: {
+                            username: $username,
+                            email: $email,
+                            name: $name,
+                            password: $password
                         }
+                    ) {
+                        _id
+                        username
+                        email
+                        name
+                        active
+                        registered
+                        avatarUrl
                     }
-                `,
-                variables: {
-                    ...params
                 }
-            }).then(result => {
-                if (result.data.registerUser.errors !== null) {
-                    reject(result.data.registerUser.errors);
-                } else {
-                    fulfill(result.data.registerUser.user);
-                }
-            }).catch(err => reject(err));
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
         });
+        
+        return user;
     }
     
     /**
@@ -161,346 +158,266 @@ class ZenttyClient {
      *   password: String!
      * }
      */
-    loginUser (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.mutate({
-                mutation: gql`
-                    mutation loginUser($identifier: String!, $password: String!) {
-                        loginUser(
-                            identifier: $identifier,
-                            password: $password
-                        ) {
-                            loginSession {
-                                sessionCode
-                                createdAt
-                                expires
-                                ipAddress
-                                userAgent
-                            }
-                            errors {
-                                field
-                                message
-                            }
+    async loginUser (params) {
+        const { data: { loginUser: loginSession }} = await this.client.mutate({
+            mutation: gql`
+                mutation loginUser($identifier: String!, $password: String!) {
+                    loginUser(
+                        identifier: $identifier,
+                        password: $password
+                    ) {
+                        sessionCode
+                    }
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        this.setSessionCode(loginSession.sessionCode);
+        
+        return loginSession;
+    }
+    
+    async getUser (params = {}) {
+        const { data: { getUser: user }} = await this.client.query({
+            query: gql`
+                query getUser {
+                    getUser {
+                        _id
+                        username
+                        email
+                        name
+                        active
+                        registered
+                        avatarUrl
+                    }
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return user;
+    }
+    
+    async logoutUser (params) {
+        await this.client.mutate({
+            mutation: gql`
+                mutation logoutUser($sessionCode: String) {
+                    logoutUser(
+                        sessionCode: $sessionCode
+                    )
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        this.setSessionCode(null);
+    }
+    
+    async createEntity (params = {}) {
+        const { data: { createEntity: entity }} = await this.client.mutate({
+            mutation: gql`
+                mutation createEntity($type: String!, $entity: EntityInputData!, $scopeID: String, $parentEntityID: String, $placeBeforeID: String, $placeAfterID: String) {
+                    createEntity(
+                        type: $type,
+                        entity: $entity,
+                        scopeID: $scopeID,
+                        parentEntityID: $parentEntityID,
+                        placeBeforeID: $placeBeforeID,
+                        placeAfterID: $placeAfterID
+                    ) {
+                        _id
+                        title
+                        body
+                        metadata
+                        type
+                        createdAt
+                        archived
+                    }
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return entity;
+    }
+    
+    async getEntity (params = {}) {
+        const { data: { getEntity: entity }} = await this.client.query({
+            query: gql`
+                query getEntity ($id: String!) {
+                    getEntity (
+                        id: $id
+                    ) {
+                        _id
+                        title
+                        body
+                        metadata
+                        type
+                        createdAt
+                        archived
+                    }
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return entity;
+    }
+    
+    async modifyEntity (params = {}) {
+        const { data: { modifyEntity: entity }} = await this.client.mutate({
+            mutation: gql`
+                mutation modifyEntity($id: String!, $entity: EntityInputData, $placeAfterID: String, $placeBeforeID: String) {
+                    modifyEntity(
+                        id: $id,
+                        entity: $entity,
+                        placeAfterID: $placeAfterID,
+                        placeBeforeID: $placeBeforeID
+                    ) {
+                        _id
+                        title
+                        body
+                        metadata
+                        type
+                        createdAt
+                        archived
+                    }
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return entity;
+    }
+    
+    async relateEntity (params = {}) {
+        const { data: { relateEntity: success }} = await this.client.mutate({
+            mutation: gql`
+                mutation relateEntity($sourceEntityID: String!, $targetEntityID: String!, $relationship: String!, $metadata: JSON, $placeAfterID: String, $placeBeforeID: String) {
+                    relateEntity(
+                        sourceEntityID: $sourceEntityID,
+                        targetEntityID: $targetEntityID,
+                        relationship: $relationship,
+                        metadata: $metadata,
+                        placeAfterID: $placeAfterID,
+                        placeBeforeID: $placeBeforeID
+                    )
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return success;
+    }
+    
+    async unrelateEntity (params = {}) {
+        const { data: { unrelateEntity: success }} = await this.client.mutate({
+            mutation: gql`
+                mutation unrelateEntity($sourceEntityID: String!, $targetEntityID: String!, $relationship: String!) {
+                    unrelateEntity(
+                        sourceEntityID: $sourceEntityID,
+                        targetEntityID: $targetEntityID,
+                        relationship: $relationship
+                    )
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return success;
+    }
+    
+    async getEntities (params = {}) {
+        const { data: { getEntities: entities }} = await this.client.query({
+            query: gql`
+                query getEntities ($parentID: Int!, childType: String, limit: Int, offset: Int) {
+                    getEntities (
+                        parentID: $parentID,
+                        childType: $childType,
+                        limit: $limit,
+                        offset: $offset
+                    ) {
+                        result {
+                            total
+                            limit
+                            offset
                         }
-                    }
-                `,
-                variables: {
-                    ...params
-                }
-            }).then(result => {
-                if (result.data.loginUser.errors !== null) {
-                    reject(result.data.loginUser.errors);
-                } else {
-                    const loginSession = result.data.loginUser.loginSession;
-                    this.setSessionCode(loginSession.sessionCode);
-                    fulfill(loginSession);
-                }
-            }).catch(err => reject(err));
-        });
-    }
-    
-    getUser () {
-        return new Promise((fulfill, reject) => {
-            this.client.query({
-                fetchPolicy: 'network-only',
-                query: gql`
-                    query {
-                        getUser {
-                            _id
-                            username
-                            email
-                            name
-                            active
-                            registered
-                            avatarUrl
-                        }
-                    }
-                `
-            }).then(result => {
-                fulfill(result.data.getUser);
-            }).catch(err => reject(err));
-        });
-    }
-    
-    logoutUser (sessionCode = null) {
-        return new Promise((fulfill, reject) => {
-            this.client.mutate({
-                mutation: gql`
-                    mutation logoutUser($sessionCode: String) {
-                        logoutUser(
-                            sessionCode: $sessionCode
-                        )
-                    }
-                `,
-                variables: {
-                    sessionCode
-                }
-            }).then(result => {
-                const success = result.data.logoutUser;
-                
-                if (success === true) {
-                    this.setSessionCode(null);
-                }
-                
-                fulfill(success);
-            }).catch(err => reject(err));
-        });
-    }
-    
-    /**
-     * params {
-     *   type: String!
-     *   title: String
-     *   body: String
-     *   metadata: Object
-     *   scopeID: String
-     *   parentID: String
-     * }
-     */
-    createEntity (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.mutate({
-                mutation: gql`
-                    mutation createEntity($type: String!, $title: String, $body: RichContent, $metadata: JSON, $scopeID: String, $parentEntityID: String) {
-                        createEntity(
-                            type: $type,
-                            entity: {
-                                title: $title,
-                                body: $body,
-                                metadata: $metadata
-                            },
-                            scopeID: $scopeID,
-                            parentEntityID: $parentEntityID
-                        ) {
+                        items {
                             _id
                             title
-                            body
-                            metadata
                             type
-                            createdAt
-                            createdBy {
-                                _id
-                                name
-                                username
-                                active
-                                registered
-                                avatarUrl
-                            }
-                            archived
                         }
                     }
-                `,
-                variables: {
-                    ...params
                 }
-            }).then(result => {
-                fulfill(result.data.createEntity);
-            }).catch(err => reject(err));
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
         });
+        
+        return entities;
     }
     
-    /**
-     * params {
-     *      id: String!
-     * }
-     */
-    getEntity (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.query({
-                query: gql`
-                    query getEntity($id: String!) {
-                        getEntity(
-                            id: $id
-                        ) {
-                            _id
-                            title
-                            body
-                            metadata
-                            type
-                            createdAt
-                            createdBy {
-                                _id
-                                name
-                                username
-                                active
-                                registered
-                                avatarUrl
-                            }
-                            archived
+    async getRelatedEntities (params = {}) {
+        const { data: { getRelatedEntities: entities }} = await this.client.query({
+            query: gql`
+                query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $direction: String, $limit: Int, $offset: Int) {
+                    getRelatedEntities (
+                        sourceEntityID: $sourceEntityID,
+                        relationship: $relationship,
+                        direction: $direction,
+                        limit: $limit,
+                        offset: $offset
+                    ) {
+                        result {
+                            total
+                            limit
+                            offset
                         }
-                    }
-                `,
-                variables: {
-                    ...params
-                }
-            }).then(result => {
-                fulfill(result.data.getEntity);
-            }).catch(err => reject(err));
-        });
-    }
-    
-    /**
-     * params {
-     *   id: String!
-     *   title: String
-     *   body: String
-     *   metadata: Object
-     * }
-     */
-    modifyEntity (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.mutate({
-                mutation: gql`
-                    mutation modifyEntity($id: String!, $title: String, $body: RichContent, $metadata: JSON) {
-                        modifyEntity(
-                            id: $id,
-                            entity: {
-                                title: $title,
-                                body: $body,
-                                metadata: $metadata
-                            }
-                        ) {
-                            _id
-                            title
-                            body
-                            metadata
-                            type
-                            createdAt
-                            createdBy {
-                                _id
-                                name
-                                username
-                                active
-                                registered
-                                avatarUrl
-                            }
-                            archived
-                        }
-                    }
-                `,
-                variables: {
-                    ...params
-                }
-            }).then(result => {
-                fulfill(result.data.modifyEntity);
-            }).catch(err => reject(err));
-        });
-    }
-    
-    /**
-     * params {
-     *     parentID: String!
-     *     childType: String
-     *     limit: Int
-     *     offset: Int
-     * }
-     */
-    getEntities (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.query({
-                fetchPolicy: 'network-only',
-                query: gql`
-                    query getEntities ($parentID: String!, $childType: String, $limit: Int = 0, $offset: Int = 0) {
-                        getEntities (
-                            parentID: $parentID,
-                            childType: $childType,
-                            limit: $limit,
-                            offset: $offset
-                        ) {
-                            result {
-                                total
-                                limit
-                                offset
-                            }
-                            items {
+                        items {
+                            targetEntity {
                                 _id
                                 title
-                                metadata
-                                file {
-                                    filename
-                                    filesize
-                                    status
-                                }
                                 type
-                                createdAt
-                                createdBy {
-                                    _id
-                                    username
-                                    name
-                                    registered
-                                    active
-                                    avatarUrl
-                                }
                             }
+                            position
                         }
                     }
-                `,
-                variables: {
-                    ...params
                 }
-            }).then(result => {
-                fulfill(result.data.getEntities);
-            }).catch(err => reject(err));
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
         });
-    }
-    
-    /**
-     * params {
-     *   soureEntityID: String!
-     *   relationship: String!
-     *   direction: [source|target] default target
-     *   limit: Int
-     *   offset: Int
-     * }
-     */
-    getRelatedEntities (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.query({
-                fetchPolicy: 'network-only',
-                query: gql`
-                    query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $direction: String = "target", $limit: Int = 0, $offset: Int = 0) {
-                        getRelatedEntities (
-                            sourceEntityID: $sourceEntityID,
-                            relationship: $relationship,
-                            direction: $direction,
-                            limit: $limit,
-                            offset: $offset
-                        ) {
-                            result {
-                                total
-                                limit
-                                offset
-                            }
-                            items {
-                                _id
-                                title
-                                metadata
-                                file {
-                                    filename
-                                    filesize
-                                    status
-                                }
-                                type
-                                createdAt
-                                createdBy {
-                                    _id
-                                    username
-                                    name
-                                    registered
-                                    active
-                                    avatarUrl
-                                }
-                            }
-                        }
-                    }
-                `,
-                variables: {
-                    ...params
-                }
-            }).then(result => {
-                fulfill(result.data.getRelatedEntities);
-            }).catch(err => reject(err));
-        });
+        
+        return entities;
     }
     
     /**
@@ -511,26 +428,24 @@ class ZenttyClient {
      *     filesize: Int!
      * }
      */
-    prepareFileUpload (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.mutate({
-                mutation: gql`
-                    mutation prepareFileUpload($entityID: String!, $filename: String!, $type: String, $filesize: Int!) {
-                        prepareFileUpload(
-                            entityID: $entityID,
-                            filename: $filename,
-                            type: $type,
-                            filesize: $filesize
-                        )
-                    }
-                `,
-                variables: {
-                    ...params
+    async prepareFileUpload (params) {
+        const {data: {prepareFileUpload: success}} = await this.client.mutate({
+            fetchPolicy: 'network-only',
+            mutation: gql`
+                mutation prepareFileUpload($entityID: String!, $filename: String!, $type: String, $filesize: Int!) {
+                    prepareFileUpload(
+                        entityID: $entityID,
+                        filename: $filename,
+                        type: $type,
+                        filesize: $filesize
+                    )
                 }
-            }).then(result => {
-                fulfill(result.data.prepareFileUpload);
-            }).catch(err => reject(err));
+            `,
+            variables: {
+                ...params
+            }
         });
+        return success;
     }
     
     /**
@@ -539,24 +454,22 @@ class ZenttyClient {
      *    chunk: Buffer
      * }
      */
-    appendFileChunk (params) {
-        return new Promise((fulfill, reject) => {
-            this.client.mutate({
-                mutation: gql`
-                    mutation appendFileChunk($entityID: String!) {
-                        appendFileChunk(
-                            entityID: $entityID
-                        )
-                    }
-                `,
-                variables: {
-                    entityID: params.entityID,
-                    _chunk: params.chunk
+    async appendFileChunk (params) {
+        const {data: {appendFileChunk: isComplete}} = await this.client.mutate({
+            fetchPolicy: 'network-only',
+            mutation: gql`
+                mutation appendFileChunk($entityID: String!) {
+                    appendFileChunk(
+                        entityID: $entityID
+                    )
                 }
-            }).then(result => {
-                fulfill(result.data.appendFileChunk);
-            }).catch(err => reject(err));
+            `,
+            variables: {
+                entityID: params.entityID,
+                _chunk: params.chunk
+            }
         });
+        return isComplete;
     }
     
     _uploadFileChunk (entityID, file, start, chunkSize, fn) {
@@ -587,40 +500,40 @@ class ZenttyClient {
      *    file: File
      * }
      */
-    uploadFile (params, fn = () => {}) {
-        return new Promise((fulfill, reject) => {
-            const id = params.entityID || null;
-            const file = params.file || null;
-            
-            if (id === null) {
-                reject('Entity ID missing');
-            }
-            
-            if (file === null) {
-                reject('File missing');
-            }
-            
-            // Prepare the file
-            this.prepareFileUpload({
-                entityID: params.entityID,
-                filename: file.name,
-                filesize: file.size
-            }).then(() => {
-                // The file has been prepared, lets start uploading the chunks
-                this._uploadFileChunk(id, file, 0, 200 * 1024, (err, progress) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        // Share the progress
-                        fn(progress);
-                        
-                        if (progress.complete) {
-                            fulfill();
-                        }
-                    }
-                });
-            }).catch(err => reject(err));
+    async uploadFile ({id = null, file = null}, fn = () => {}) {
+        if (id === null) {
+            throw 'Entity ID missing';
+        }
+        
+        if (file === null) {
+            throw 'File missing';
+        }
+        
+        // Prepare the file
+        await this.prepareFileUpload({
+            entityID: id,
+            filename: file.name,
+            filesize: file.size
         });
+        
+        let done = false;
+        let start = 0;
+        let end, chunk, progress;
+        const chunkSize = 200 * 1014;
+        while (!done) {
+            end = Math.min(start + chunkSize, file.size);
+            chunk = slice(file, start, end);
+            // Do the upload
+            done = await this.appendFileChunk({id, chunk});
+            
+            progress = {
+                complete: done,
+                bytesUploaded: end,
+                totalBytes: file.size
+            };
+            
+            fn(progress); // Call out notification
+        }
     }
 }
 
