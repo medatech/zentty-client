@@ -355,7 +355,7 @@ class ZenttyClient {
     async getEntities (params = {}) {
         const { data: { getEntities: entities }} = await this.client.query({
             query: gql`
-                query getEntities ($parentID: Int!, childType: String, limit: Int, offset: Int) {
+                query getEntities ($parentID: String!, $childType: String, $limit: Int, $offset: Int) {
                     getEntities (
                         parentID: $parentID,
                         childType: $childType,
