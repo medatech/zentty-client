@@ -257,14 +257,23 @@ class ZenttyClient {
     async getEntity (params = {}) {
         const { data: { getEntity: entity }} = await this.client.query({
             query: gql`
-                query getEntity ($id: String!) {
+                query getEntity ($id: String!, $waitForFile: Boolean, $waitTimeout: Int) {
                     getEntity (
-                        id: $id
+                        id: $id,
+                        waitForFile: $waitForFile,
+                        waitTimeout: $waitTimeout
                     ) {
                         _id
                         title
                         body
                         metadata
+                        file {
+                            filename
+                            filesize
+                            svg
+                            hash
+                            status
+                        }
                         type
                         createdAt
                         archived
@@ -498,7 +507,7 @@ class ZenttyClient {
         let done = false;
         let start = 0;
         let end, chunk, progress;
-        const chunkSize = 200 * 1014;
+        const chunkSize = 200 * 1024;
         while (!done) {
             end = Math.min(start + chunkSize, file.size);
             chunk = slice(file, start, end);
@@ -512,6 +521,8 @@ class ZenttyClient {
             };
             
             fn(progress); // Call out notification
+            
+            start = end;
         }
     }
 }
