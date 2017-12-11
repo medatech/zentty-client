@@ -387,10 +387,11 @@ class ZenttyClient {
     async getRelatedEntities (params = {}) {
         const { data: { getRelatedEntities: entities }} = await this.client.query({
             query: gql`
-                query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $direction: String, $limit: Int, $offset: Int) {
+                query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $type: String, $direction: String, $limit: Int, $offset: Int) {
                     getRelatedEntities (
                         sourceEntityID: $sourceEntityID,
                         relationship: $relationship,
+                        type: $type,
                         direction: $direction,
                         limit: $limit,
                         offset: $offset
@@ -471,37 +472,15 @@ class ZenttyClient {
         });
         return isComplete;
     }
-    
-    _uploadFileChunk (entityID, file, start, chunkSize, fn) {
-        const end = Math.min(start + chunkSize, file.size);
-        const chunk = slice(file, start, end);
-        
-        this.appendFileChunk({
-            entityID: entityID,
-            chunk: chunk
-        }).then((isComplete) => {
-            const progress = {
-                complete: isComplete,
-                bytesUploaded: end,
-                totalBytes: file.size
-            };
-            
-            fn(null, progress);
-            
-            if (!isComplete) {
-                this._uploadFileChunk(entityID, file, end, chunkSize, fn);
-            }
-        }).catch(err => fn(err));
-    }
-    
+
     /**
      * params {
      *    entityID: String!
      *    file: File
      * }
      */
-    async uploadFile ({id = null, file = null}, fn = () => {}) {
-        if (id === null) {
+    async uploadFile ({entityID = null, file = null}, fn = () => {}) {
+        if (entityID === null) {
             throw 'Entity ID missing';
         }
         
@@ -511,7 +490,7 @@ class ZenttyClient {
         
         // Prepare the file
         await this.prepareFileUpload({
-            entityID: id,
+            entityID: entityID,
             filename: file.name,
             filesize: file.size
         });
@@ -524,7 +503,7 @@ class ZenttyClient {
             end = Math.min(start + chunkSize, file.size);
             chunk = slice(file, start, end);
             // Do the upload
-            done = await this.appendFileChunk({id, chunk});
+            done = await this.appendFileChunk({entityID, chunk});
             
             progress = {
                 complete: done,
