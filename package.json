@@ -1,6 +1,6 @@
 {
   "name": "zentty-client",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Official Zentty JavaScript Client",
   "main": "dist/index.js",
   "scripts": {
