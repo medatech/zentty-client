@@ -23,7 +23,7 @@ export class UploadHTTPFetchNetworkInterface extends HTTPFetchNetworkInterface {
             return fetch(this._uri, {
                 method: 'POST',
                 body: formData,
-                credentials: true,
+                credentials: 'include',
                 ...options
             });
         //}
