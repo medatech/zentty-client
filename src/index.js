@@ -270,9 +270,24 @@ class ZenttyClient {
                         file {
                             filename
                             filesize
-                            svg
+                            type {
+                                ext
+                                mimetype
+                            }
                             hash
+                            width
+                            height
                             status
+                            url
+                            variants {
+                                name
+                                content
+                                filesize
+                                mimetype
+                                url
+                                width
+                                height
+                            }
                         }
                         type
                         createdAt
