@@ -28,6 +28,6 @@ export class UploadHTTPFetchNetworkInterface extends HTTPFetchNetworkInterface {
     }
 }
 
-export function createNetworkInterface({ uri, opts = {} }) {
+export function createNetworkInterface({ uri, opts = {credentials: 'include'} }) {
     return new UploadHTTPFetchNetworkInterface(uri, opts)
 }
