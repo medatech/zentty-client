@@ -4,11 +4,15 @@ import FormData from 'isomorphic-form-data';
 
 export class UploadHTTPFetchNetworkInterface extends HTTPFetchNetworkInterface {
     fetchFromRemoteEndpoint({ request, options }) {
-        if (request.variables && request.variables._chunk) {
+        //if (request.variables && request.variables._chunk) {
             const formData = new FormData();
             formData.append('operationName', request.operationName || '');
+            
             //formData.append('operations', JSON.stringify(request));
-            formData.append('chunk', request.variables._chunk);
+            if (request.variables._chunk) {
+                formData.append('chunk', request.variables._chunk);
+            }
+            
             formData.append('debugName', JSON.stringify(request.debugName || ''));
             formData.append('query', printAST(request.query));
             
@@ -19,15 +23,16 @@ export class UploadHTTPFetchNetworkInterface extends HTTPFetchNetworkInterface {
             return fetch(this._uri, {
                 method: 'POST',
                 body: formData,
+                credentials: true,
                 ...options
             });
-        }
+        //}
 
         // Standard fetch method fallback
-        return super.fetchFromRemoteEndpoint({ request, options })
+        //return super.fetchFromRemoteEndpoint({ request, options })
     }
 }
 
-export function createNetworkInterface({ uri, opts = {credentials: 'include'} }) {
+export function createNetworkInterface({ uri, opts = {} }) {
     return new UploadHTTPFetchNetworkInterface(uri, opts)
 }
