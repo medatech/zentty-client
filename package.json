@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "babel src --presets env --out-dir dist",
-    "browser-build": "browserify src/index.js -o browser-dist/zentty-client.js -t [ babelify --presets [ es2015 stage-2 ] ]",
+    "browser-build": "browserify src/index.js -o browser-dist/zentty-client.js -t [ babelify --presets [ env ] ]",
     "test": "mocha --compilers js:babel-register"
   },
   "repository": {

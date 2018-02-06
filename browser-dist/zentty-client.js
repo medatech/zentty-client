@@ -473,8 +473,11 @@ var HTTPFetchNetworkInterface = (function (_super) {
         return new Promise(function (resolve, reject) {
             var request = requestAndOptions.request, options = requestAndOptions.options;
             var queue = function (funcs, scope) {
-                var next = function () {
-                    if (funcs.length > 0) {
+                var next = function (err) {
+                    if (err) {
+                        reject(err);
+                    }
+                    else if (funcs.length > 0) {
                         var f = funcs.shift();
                         if (f) {
                             f.applyMiddleware.apply(scope, [{ request: request, options: options }, next]);
@@ -1307,13 +1310,16 @@ function isEqual(a, b) {
     if (a === b) {
         return true;
     }
+    if (a instanceof Date && b instanceof Date) {
+        return a.getTime() === b.getTime();
+    }
     if (a != null &&
         typeof a === 'object' &&
         b != null &&
         typeof b === 'object') {
         for (var key in a) {
-            if (a.hasOwnProperty(key)) {
-                if (!b.hasOwnProperty(key)) {
+            if (Object.prototype.hasOwnProperty.call(a, key)) {
+                if (!Object.prototype.hasOwnProperty.call(b, key)) {
                     return false;
                 }
                 if (!isEqual(a[key], b[key])) {
@@ -1322,7 +1328,7 @@ function isEqual(a, b) {
             }
         }
         for (var key in b) {
-            if (!a.hasOwnProperty(key)) {
+            if (!Object.prototype.hasOwnProperty.call(a, key)) {
                 return false;
             }
         }
@@ -3591,7 +3597,7 @@ var QueryManager = (function () {
     return QueryManager;
 }());
 
-var version = "1.9.2";
+var version = "1.9.3";
 
 var __assign$11 = (undefined && undefined.__assign) || Object.assign || function(t) {
     for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -3903,7 +3909,682 @@ Object.defineProperty(exports, '__esModule', { value: true });
 
 
 }).call(this,require('_process'))
-},{"_process":37,"apollo-link-core":2,"graphql-anywhere":9,"graphql/language/printer":23,"redux":43,"symbol-observable":45,"whatwg-fetch":48}],2:[function(require,module,exports){
+},{"_process":8,"apollo-link-core":4,"graphql-anywhere":12,"graphql/language/printer":2,"redux":43,"symbol-observable":45,"whatwg-fetch":48}],2:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.print = print;
+
+var _visitor = require('./visitor');
+
+/**
+ * Converts an AST into a string, using one set of reasonable
+ * formatting rules.
+ */
+function print(ast) {
+  return (0, _visitor.visit)(ast, { leave: printDocASTReducer });
+} /**
+   *  Copyright (c) 2015, Facebook, Inc.
+   *  All rights reserved.
+   *
+   *  This source code is licensed under the BSD-style license found in the
+   *  LICENSE file in the root directory of this source tree. An additional grant
+   *  of patent rights can be found in the PATENTS file in the same directory.
+   */
+
+var printDocASTReducer = {
+  Name: function Name(node) {
+    return node.value;
+  },
+  Variable: function Variable(node) {
+    return '$' + node.name;
+  },
+
+  // Document
+
+  Document: function Document(node) {
+    return join(node.definitions, '\n\n') + '\n';
+  },
+
+  OperationDefinition: function OperationDefinition(node) {
+    var op = node.operation;
+    var name = node.name;
+    var varDefs = wrap('(', join(node.variableDefinitions, ', '), ')');
+    var directives = join(node.directives, ' ');
+    var selectionSet = node.selectionSet;
+    // Anonymous queries with no directives or variable definitions can use
+    // the query short form.
+    return !name && !directives && !varDefs && op === 'query' ? selectionSet : join([op, join([name, varDefs]), directives, selectionSet], ' ');
+  },
+
+
+  VariableDefinition: function VariableDefinition(_ref) {
+    var variable = _ref.variable,
+        type = _ref.type,
+        defaultValue = _ref.defaultValue;
+    return variable + ': ' + type + wrap(' = ', defaultValue);
+  },
+
+  SelectionSet: function SelectionSet(_ref2) {
+    var selections = _ref2.selections;
+    return block(selections);
+  },
+
+  Field: function Field(_ref3) {
+    var alias = _ref3.alias,
+        name = _ref3.name,
+        args = _ref3.arguments,
+        directives = _ref3.directives,
+        selectionSet = _ref3.selectionSet;
+    return join([wrap('', alias, ': ') + name + wrap('(', join(args, ', '), ')'), join(directives, ' '), selectionSet], ' ');
+  },
+
+  Argument: function Argument(_ref4) {
+    var name = _ref4.name,
+        value = _ref4.value;
+    return name + ': ' + value;
+  },
+
+  // Fragments
+
+  FragmentSpread: function FragmentSpread(_ref5) {
+    var name = _ref5.name,
+        directives = _ref5.directives;
+    return '...' + name + wrap(' ', join(directives, ' '));
+  },
+
+  InlineFragment: function InlineFragment(_ref6) {
+    var typeCondition = _ref6.typeCondition,
+        directives = _ref6.directives,
+        selectionSet = _ref6.selectionSet;
+    return join(['...', wrap('on ', typeCondition), join(directives, ' '), selectionSet], ' ');
+  },
+
+  FragmentDefinition: function FragmentDefinition(_ref7) {
+    var name = _ref7.name,
+        typeCondition = _ref7.typeCondition,
+        directives = _ref7.directives,
+        selectionSet = _ref7.selectionSet;
+    return 'fragment ' + name + ' on ' + typeCondition + ' ' + wrap('', join(directives, ' '), ' ') + selectionSet;
+  },
+
+  // Value
+
+  IntValue: function IntValue(_ref8) {
+    var value = _ref8.value;
+    return value;
+  },
+  FloatValue: function FloatValue(_ref9) {
+    var value = _ref9.value;
+    return value;
+  },
+  StringValue: function StringValue(_ref10) {
+    var value = _ref10.value;
+    return JSON.stringify(value);
+  },
+  BooleanValue: function BooleanValue(_ref11) {
+    var value = _ref11.value;
+    return JSON.stringify(value);
+  },
+  NullValue: function NullValue() {
+    return 'null';
+  },
+  EnumValue: function EnumValue(_ref12) {
+    var value = _ref12.value;
+    return value;
+  },
+  ListValue: function ListValue(_ref13) {
+    var values = _ref13.values;
+    return '[' + join(values, ', ') + ']';
+  },
+  ObjectValue: function ObjectValue(_ref14) {
+    var fields = _ref14.fields;
+    return '{' + join(fields, ', ') + '}';
+  },
+  ObjectField: function ObjectField(_ref15) {
+    var name = _ref15.name,
+        value = _ref15.value;
+    return name + ': ' + value;
+  },
+
+  // Directive
+
+  Directive: function Directive(_ref16) {
+    var name = _ref16.name,
+        args = _ref16.arguments;
+    return '@' + name + wrap('(', join(args, ', '), ')');
+  },
+
+  // Type
+
+  NamedType: function NamedType(_ref17) {
+    var name = _ref17.name;
+    return name;
+  },
+  ListType: function ListType(_ref18) {
+    var type = _ref18.type;
+    return '[' + type + ']';
+  },
+  NonNullType: function NonNullType(_ref19) {
+    var type = _ref19.type;
+    return type + '!';
+  },
+
+  // Type System Definitions
+
+  SchemaDefinition: function SchemaDefinition(_ref20) {
+    var directives = _ref20.directives,
+        operationTypes = _ref20.operationTypes;
+    return join(['schema', join(directives, ' '), block(operationTypes)], ' ');
+  },
+
+  OperationTypeDefinition: function OperationTypeDefinition(_ref21) {
+    var operation = _ref21.operation,
+        type = _ref21.type;
+    return operation + ': ' + type;
+  },
+
+  ScalarTypeDefinition: function ScalarTypeDefinition(_ref22) {
+    var name = _ref22.name,
+        directives = _ref22.directives;
+    return join(['scalar', name, join(directives, ' ')], ' ');
+  },
+
+  ObjectTypeDefinition: function ObjectTypeDefinition(_ref23) {
+    var name = _ref23.name,
+        interfaces = _ref23.interfaces,
+        directives = _ref23.directives,
+        fields = _ref23.fields;
+    return join(['type', name, wrap('implements ', join(interfaces, ', ')), join(directives, ' '), block(fields)], ' ');
+  },
+
+  FieldDefinition: function FieldDefinition(_ref24) {
+    var name = _ref24.name,
+        args = _ref24.arguments,
+        type = _ref24.type,
+        directives = _ref24.directives;
+    return name + wrap('(', join(args, ', '), ')') + ': ' + type + wrap(' ', join(directives, ' '));
+  },
+
+  InputValueDefinition: function InputValueDefinition(_ref25) {
+    var name = _ref25.name,
+        type = _ref25.type,
+        defaultValue = _ref25.defaultValue,
+        directives = _ref25.directives;
+    return join([name + ': ' + type, wrap('= ', defaultValue), join(directives, ' ')], ' ');
+  },
+
+  InterfaceTypeDefinition: function InterfaceTypeDefinition(_ref26) {
+    var name = _ref26.name,
+        directives = _ref26.directives,
+        fields = _ref26.fields;
+    return join(['interface', name, join(directives, ' '), block(fields)], ' ');
+  },
+
+  UnionTypeDefinition: function UnionTypeDefinition(_ref27) {
+    var name = _ref27.name,
+        directives = _ref27.directives,
+        types = _ref27.types;
+    return join(['union', name, join(directives, ' '), '= ' + join(types, ' | ')], ' ');
+  },
+
+  EnumTypeDefinition: function EnumTypeDefinition(_ref28) {
+    var name = _ref28.name,
+        directives = _ref28.directives,
+        values = _ref28.values;
+    return join(['enum', name, join(directives, ' '), block(values)], ' ');
+  },
+
+  EnumValueDefinition: function EnumValueDefinition(_ref29) {
+    var name = _ref29.name,
+        directives = _ref29.directives;
+    return join([name, join(directives, ' ')], ' ');
+  },
+
+  InputObjectTypeDefinition: function InputObjectTypeDefinition(_ref30) {
+    var name = _ref30.name,
+        directives = _ref30.directives,
+        fields = _ref30.fields;
+    return join(['input', name, join(directives, ' '), block(fields)], ' ');
+  },
+
+  TypeExtensionDefinition: function TypeExtensionDefinition(_ref31) {
+    var definition = _ref31.definition;
+    return 'extend ' + definition;
+  },
+
+  DirectiveDefinition: function DirectiveDefinition(_ref32) {
+    var name = _ref32.name,
+        args = _ref32.arguments,
+        locations = _ref32.locations;
+    return 'directive @' + name + wrap('(', join(args, ', '), ')') + ' on ' + join(locations, ' | ');
+  }
+};
+
+/**
+ * Given maybeArray, print an empty string if it is null or empty, otherwise
+ * print all items together separated by separator if provided
+ */
+function join(maybeArray, separator) {
+  return maybeArray ? maybeArray.filter(function (x) {
+    return x;
+  }).join(separator || '') : '';
+}
+
+/**
+ * Given array, print each item on its own line, wrapped in an
+ * indented "{ }" block.
+ */
+function block(array) {
+  return array && array.length !== 0 ? indent('{\n' + join(array, '\n')) + '\n}' : '{}';
+}
+
+/**
+ * If maybeString is not null or empty, then wrap with start and end, otherwise
+ * print an empty string.
+ */
+function wrap(start, maybeString, end) {
+  return maybeString ? start + maybeString + (end || '') : '';
+}
+
+function indent(maybeString) {
+  return maybeString && maybeString.replace(/\n/g, '\n  ');
+}
+},{"./visitor":3}],3:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.visit = visit;
+exports.visitInParallel = visitInParallel;
+exports.visitWithTypeInfo = visitWithTypeInfo;
+exports.getVisitFn = getVisitFn;
+/**
+ *  Copyright (c) 2015, Facebook, Inc.
+ *  All rights reserved.
+ *
+ *  This source code is licensed under the BSD-style license found in the
+ *  LICENSE file in the root directory of this source tree. An additional grant
+ *  of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+var QueryDocumentKeys = exports.QueryDocumentKeys = {
+  Name: [],
+
+  Document: ['definitions'],
+  OperationDefinition: ['name', 'variableDefinitions', 'directives', 'selectionSet'],
+  VariableDefinition: ['variable', 'type', 'defaultValue'],
+  Variable: ['name'],
+  SelectionSet: ['selections'],
+  Field: ['alias', 'name', 'arguments', 'directives', 'selectionSet'],
+  Argument: ['name', 'value'],
+
+  FragmentSpread: ['name', 'directives'],
+  InlineFragment: ['typeCondition', 'directives', 'selectionSet'],
+  FragmentDefinition: ['name', 'typeCondition', 'directives', 'selectionSet'],
+
+  IntValue: [],
+  FloatValue: [],
+  StringValue: [],
+  BooleanValue: [],
+  NullValue: [],
+  EnumValue: [],
+  ListValue: ['values'],
+  ObjectValue: ['fields'],
+  ObjectField: ['name', 'value'],
+
+  Directive: ['name', 'arguments'],
+
+  NamedType: ['name'],
+  ListType: ['type'],
+  NonNullType: ['type'],
+
+  SchemaDefinition: ['directives', 'operationTypes'],
+  OperationTypeDefinition: ['type'],
+
+  ScalarTypeDefinition: ['name', 'directives'],
+  ObjectTypeDefinition: ['name', 'interfaces', 'directives', 'fields'],
+  FieldDefinition: ['name', 'arguments', 'type', 'directives'],
+  InputValueDefinition: ['name', 'type', 'defaultValue', 'directives'],
+  InterfaceTypeDefinition: ['name', 'directives', 'fields'],
+  UnionTypeDefinition: ['name', 'directives', 'types'],
+  EnumTypeDefinition: ['name', 'directives', 'values'],
+  EnumValueDefinition: ['name', 'directives'],
+  InputObjectTypeDefinition: ['name', 'directives', 'fields'],
+
+  TypeExtensionDefinition: ['definition'],
+
+  DirectiveDefinition: ['name', 'arguments', 'locations']
+};
+
+var BREAK = exports.BREAK = {};
+
+/**
+ * visit() will walk through an AST using a depth first traversal, calling
+ * the visitor's enter function at each node in the traversal, and calling the
+ * leave function after visiting that node and all of its child nodes.
+ *
+ * By returning different values from the enter and leave functions, the
+ * behavior of the visitor can be altered, including skipping over a sub-tree of
+ * the AST (by returning false), editing the AST by returning a value or null
+ * to remove the value, or to stop the whole traversal by returning BREAK.
+ *
+ * When using visit() to edit an AST, the original AST will not be modified, and
+ * a new version of the AST with the changes applied will be returned from the
+ * visit function.
+ *
+ *     const editedAST = visit(ast, {
+ *       enter(node, key, parent, path, ancestors) {
+ *         // @return
+ *         //   undefined: no action
+ *         //   false: skip visiting this node
+ *         //   visitor.BREAK: stop visiting altogether
+ *         //   null: delete this node
+ *         //   any value: replace this node with the returned value
+ *       },
+ *       leave(node, key, parent, path, ancestors) {
+ *         // @return
+ *         //   undefined: no action
+ *         //   false: no action
+ *         //   visitor.BREAK: stop visiting altogether
+ *         //   null: delete this node
+ *         //   any value: replace this node with the returned value
+ *       }
+ *     });
+ *
+ * Alternatively to providing enter() and leave() functions, a visitor can
+ * instead provide functions named the same as the kinds of AST nodes, or
+ * enter/leave visitors at a named key, leading to four permutations of
+ * visitor API:
+ *
+ * 1) Named visitors triggered when entering a node a specific kind.
+ *
+ *     visit(ast, {
+ *       Kind(node) {
+ *         // enter the "Kind" node
+ *       }
+ *     })
+ *
+ * 2) Named visitors that trigger upon entering and leaving a node of
+ *    a specific kind.
+ *
+ *     visit(ast, {
+ *       Kind: {
+ *         enter(node) {
+ *           // enter the "Kind" node
+ *         }
+ *         leave(node) {
+ *           // leave the "Kind" node
+ *         }
+ *       }
+ *     })
+ *
+ * 3) Generic visitors that trigger upon entering and leaving any node.
+ *
+ *     visit(ast, {
+ *       enter(node) {
+ *         // enter any node
+ *       },
+ *       leave(node) {
+ *         // leave any node
+ *       }
+ *     })
+ *
+ * 4) Parallel visitors for entering and leaving nodes of a specific kind.
+ *
+ *     visit(ast, {
+ *       enter: {
+ *         Kind(node) {
+ *           // enter the "Kind" node
+ *         }
+ *       },
+ *       leave: {
+ *         Kind(node) {
+ *           // leave the "Kind" node
+ *         }
+ *       }
+ *     })
+ */
+function visit(root, visitor, keyMap) {
+  var visitorKeys = keyMap || QueryDocumentKeys;
+
+  var stack = void 0;
+  var inArray = Array.isArray(root);
+  var keys = [root];
+  var index = -1;
+  var edits = [];
+  var parent = void 0;
+  var path = [];
+  var ancestors = [];
+  var newRoot = root;
+
+  do {
+    index++;
+    var isLeaving = index === keys.length;
+    var key = void 0;
+    var node = void 0;
+    var isEdited = isLeaving && edits.length !== 0;
+    if (isLeaving) {
+      key = ancestors.length === 0 ? undefined : path.pop();
+      node = parent;
+      parent = ancestors.pop();
+      if (isEdited) {
+        if (inArray) {
+          node = node.slice();
+        } else {
+          var clone = {};
+          for (var k in node) {
+            if (node.hasOwnProperty(k)) {
+              clone[k] = node[k];
+            }
+          }
+          node = clone;
+        }
+        var editOffset = 0;
+        for (var ii = 0; ii < edits.length; ii++) {
+          var editKey = edits[ii][0];
+          var editValue = edits[ii][1];
+          if (inArray) {
+            editKey -= editOffset;
+          }
+          if (inArray && editValue === null) {
+            node.splice(editKey, 1);
+            editOffset++;
+          } else {
+            node[editKey] = editValue;
+          }
+        }
+      }
+      index = stack.index;
+      keys = stack.keys;
+      edits = stack.edits;
+      inArray = stack.inArray;
+      stack = stack.prev;
+    } else {
+      key = parent ? inArray ? index : keys[index] : undefined;
+      node = parent ? parent[key] : newRoot;
+      if (node === null || node === undefined) {
+        continue;
+      }
+      if (parent) {
+        path.push(key);
+      }
+    }
+
+    var result = void 0;
+    if (!Array.isArray(node)) {
+      if (!isNode(node)) {
+        throw new Error('Invalid AST Node: ' + JSON.stringify(node));
+      }
+      var visitFn = getVisitFn(visitor, node.kind, isLeaving);
+      if (visitFn) {
+        result = visitFn.call(visitor, node, key, parent, path, ancestors);
+
+        if (result === BREAK) {
+          break;
+        }
+
+        if (result === false) {
+          if (!isLeaving) {
+            path.pop();
+            continue;
+          }
+        } else if (result !== undefined) {
+          edits.push([key, result]);
+          if (!isLeaving) {
+            if (isNode(result)) {
+              node = result;
+            } else {
+              path.pop();
+              continue;
+            }
+          }
+        }
+      }
+    }
+
+    if (result === undefined && isEdited) {
+      edits.push([key, node]);
+    }
+
+    if (!isLeaving) {
+      stack = { inArray: inArray, index: index, keys: keys, edits: edits, prev: stack };
+      inArray = Array.isArray(node);
+      keys = inArray ? node : visitorKeys[node.kind] || [];
+      index = -1;
+      edits = [];
+      if (parent) {
+        ancestors.push(parent);
+      }
+      parent = node;
+    }
+  } while (stack !== undefined);
+
+  if (edits.length !== 0) {
+    newRoot = edits[edits.length - 1][1];
+  }
+
+  return newRoot;
+}
+
+function isNode(maybeNode) {
+  return maybeNode && typeof maybeNode.kind === 'string';
+}
+
+/**
+ * Creates a new visitor instance which delegates to many visitors to run in
+ * parallel. Each visitor will be visited for each node before moving on.
+ *
+ * If a prior visitor edits a node, no following visitors will see that node.
+ */
+function visitInParallel(visitors) {
+  var skipping = new Array(visitors.length);
+
+  return {
+    enter: function enter(node) {
+      for (var i = 0; i < visitors.length; i++) {
+        if (!skipping[i]) {
+          var fn = getVisitFn(visitors[i], node.kind, /* isLeaving */false);
+          if (fn) {
+            var result = fn.apply(visitors[i], arguments);
+            if (result === false) {
+              skipping[i] = node;
+            } else if (result === BREAK) {
+              skipping[i] = BREAK;
+            } else if (result !== undefined) {
+              return result;
+            }
+          }
+        }
+      }
+    },
+    leave: function leave(node) {
+      for (var i = 0; i < visitors.length; i++) {
+        if (!skipping[i]) {
+          var fn = getVisitFn(visitors[i], node.kind, /* isLeaving */true);
+          if (fn) {
+            var result = fn.apply(visitors[i], arguments);
+            if (result === BREAK) {
+              skipping[i] = BREAK;
+            } else if (result !== undefined && result !== false) {
+              return result;
+            }
+          }
+        } else if (skipping[i] === node) {
+          skipping[i] = null;
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Creates a new visitor instance which maintains a provided TypeInfo instance
+ * along with visiting visitor.
+ */
+function visitWithTypeInfo(typeInfo, visitor) {
+  return {
+    enter: function enter(node) {
+      typeInfo.enter(node);
+      var fn = getVisitFn(visitor, node.kind, /* isLeaving */false);
+      if (fn) {
+        var result = fn.apply(visitor, arguments);
+        if (result !== undefined) {
+          typeInfo.leave(node);
+          if (isNode(result)) {
+            typeInfo.enter(result);
+          }
+        }
+        return result;
+      }
+    },
+    leave: function leave(node) {
+      var fn = getVisitFn(visitor, node.kind, /* isLeaving */true);
+      var result = void 0;
+      if (fn) {
+        result = fn.apply(visitor, arguments);
+      }
+      typeInfo.leave(node);
+      return result;
+    }
+  };
+}
+
+/**
+ * Given a visitor instance, if it is leaving or not, and a node kind, return
+ * the function the visitor runtime should call.
+ */
+function getVisitFn(visitor, kind, isLeaving) {
+  var kindVisitor = visitor[kind];
+  if (kindVisitor) {
+    if (!isLeaving && typeof kindVisitor === 'function') {
+      // { Kind() {} }
+      return kindVisitor;
+    }
+    var kindSpecificVisitor = isLeaving ? kindVisitor.leave : kindVisitor.enter;
+    if (typeof kindSpecificVisitor === 'function') {
+      // { Kind: { enter() {}, leave() {} } }
+      return kindSpecificVisitor;
+    }
+  } else {
+    var specificVisitor = isLeaving ? visitor.leave : visitor.enter;
+    if (specificVisitor) {
+      if (typeof specificVisitor === 'function') {
+        // { enter() {}, leave() {} }
+        return specificVisitor;
+      }
+      var specificKindVisitor = specificVisitor[kind];
+      if (typeof specificKindVisitor === 'function') {
+        // { enter: { Kind() {} }, leave: { Kind() {} } }
+        return specificKindVisitor;
+      }
+    }
+  }
+}
+},{}],4:[function(require,module,exports){
 "use strict";
 function __export(m) {
     for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
@@ -3919,7 +4600,7 @@ exports.Observable = zen_observable_ts_1.default;
 __export(require("zen-observable-ts"));
 exports.default = link_1.ApolloLink;
 
-},{"./link":3,"./linkUtils":4,"zen-observable-ts":49}],3:[function(require,module,exports){
+},{"./link":5,"./linkUtils":6,"zen-observable-ts":49}],5:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = Object.setPrototypeOf ||
@@ -4062,7 +4743,7 @@ var FunctionLink = (function (_super) {
 }(ApolloLink));
 exports.FunctionLink = FunctionLink;
 
-},{"./linkUtils":4,"graphql-tag":12,"zen-observable-ts":49}],4:[function(require,module,exports){
+},{"./linkUtils":6,"graphql-tag":15,"zen-observable-ts":49}],6:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = Object.setPrototypeOf ||
@@ -4138,7 +4819,7 @@ function makePromise(observable) {
 }
 exports.makePromise = makePromise;
 
-},{"./link":3}],5:[function(require,module,exports){
+},{"./link":5}],7:[function(require,module,exports){
 (function (global){
 /*! http://mths.be/base64 v0.1.0 by @mathias | MIT license */
 ;(function(root) {
@@ -4307,7 +4988,193 @@ exports.makePromise = makePromise;
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],6:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}],9:[function(require,module,exports){
 "use strict";
 var storeUtils_1 = require("./storeUtils");
 function getDirectiveInfoFromField(field, variables) {
@@ -4369,7 +5236,7 @@ function shouldInclude(selection, variables) {
 }
 exports.shouldInclude = shouldInclude;
 
-},{"./storeUtils":10}],7:[function(require,module,exports){
+},{"./storeUtils":13}],10:[function(require,module,exports){
 "use strict";
 function checkDocument(doc) {
     if (doc.kind !== 'Document') {
@@ -4425,7 +5292,7 @@ function getMainDefinition(queryDoc) {
 }
 exports.getMainDefinition = getMainDefinition;
 
-},{}],8:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict";
 var getFromAST_1 = require("./getFromAST");
 var directives_1 = require("./directives");
@@ -4539,7 +5406,7 @@ function merge(dest, src) {
     });
 }
 
-},{"./directives":6,"./getFromAST":7,"./storeUtils":10}],9:[function(require,module,exports){
+},{"./directives":9,"./getFromAST":10,"./storeUtils":13}],12:[function(require,module,exports){
 "use strict";
 var utilities_1 = require("./utilities");
 exports.filter = utilities_1.filter;
@@ -4549,7 +5416,7 @@ var graphql_1 = require("./graphql");
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = graphql_1.graphql;
 
-},{"./graphql":8,"./utilities":11}],10:[function(require,module,exports){
+},{"./graphql":11,"./utilities":14}],13:[function(require,module,exports){
 "use strict";
 var SCALAR_TYPES = {
     StringValue: true,
@@ -4634,7 +5501,7 @@ function graphQLResultHasError(result) {
 }
 exports.graphQLResultHasError = graphQLResultHasError;
 
-},{}],11:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 "use strict";
 var graphql_1 = require("./graphql");
 function filter(doc, data) {
@@ -4705,7 +5572,7 @@ function propType(doc) {
 }
 exports.propType = propType;
 
-},{"./graphql":8}],12:[function(require,module,exports){
+},{"./graphql":11}],15:[function(require,module,exports){
 (function (global, factory) {
 	typeof exports === 'object' && typeof module !== 'undefined' ? factory() :
 	typeof define === 'function' && define.amd ? define(factory) :
@@ -4885,7 +5752,7 @@ module.exports = gql;
 })));
 
 
-},{"graphql/language/parser":22}],13:[function(require,module,exports){
+},{"graphql/language/parser":25}],16:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -4987,21 +5854,20 @@ message, nodes, source, positions, path, originalError) {
       configurable: true
     });
   }
-}
-/**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
- *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
- */
+} /**
+   * Copyright (c) 2015-present, Facebook, Inc.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   *
+   * 
+   */
 
 GraphQLError.prototype = Object.create(Error.prototype, {
   constructor: { value: GraphQLError },
   name: { value: 'GraphQLError' }
 });
-},{"../language/location":21}],14:[function(require,module,exports){
+},{"../language/location":24}],17:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5026,16 +5892,15 @@ function formatError(error) {
     locations: error.locations,
     path: error.path
   };
-}
-/**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
- *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
- */
-},{"../jsutils/invariant":18}],15:[function(require,module,exports){
+} /**
+   * Copyright (c) 2015-present, Facebook, Inc.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   *
+   * 
+   */
+},{"../jsutils/invariant":21}],18:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5077,7 +5942,7 @@ Object.defineProperty(exports, 'formatError', {
     return _formatError.formatError;
   }
 });
-},{"./GraphQLError":13,"./formatError":14,"./locatedError":16,"./syntaxError":17}],16:[function(require,module,exports){
+},{"./GraphQLError":16,"./formatError":17,"./locatedError":19,"./syntaxError":20}],19:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5101,16 +5966,15 @@ function locatedError(originalError, nodes, path) {
 
   var message = originalError ? originalError.message || String(originalError) : 'An unknown error occurred.';
   return new _GraphQLError.GraphQLError(message, originalError && originalError.nodes || nodes, originalError && originalError.source, originalError && originalError.positions, path, originalError);
-}
-/**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
- *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
- */
-},{"./GraphQLError":13}],17:[function(require,module,exports){
+} /**
+   * Copyright (c) 2015-present, Facebook, Inc.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   *
+   * 
+   */
+},{"./GraphQLError":16}],20:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5126,14 +5990,13 @@ var _GraphQLError = require('./GraphQLError');
  * Produces a GraphQLError representing a syntax error, containing useful
  * descriptive information about the syntax error's position in the source.
  */
-
 /**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
+ * Copyright (c) 2015-present, Facebook, Inc.
  *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * 
  */
 
 function syntaxError(source, position, description) {
@@ -5174,21 +6037,20 @@ function whitespace(len) {
 function lpad(len, str) {
   return whitespace(len - str.length) + str;
 }
-},{"../language/location":21,"./GraphQLError":13}],18:[function(require,module,exports){
+},{"../language/location":24,"./GraphQLError":16}],21:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
 exports.default = invariant;
-
 /**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
+ * Copyright (c) 2015-present, Facebook, Inc.
  *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * 
  */
 
 function invariant(condition, message) {
@@ -5196,20 +6058,19 @@ function invariant(condition, message) {
     throw new Error(message);
   }
 }
-},{}],19:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-
 /**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
+ * Copyright (c) 2015-present, Facebook, Inc.
  *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * 
  */
 
 // Name
@@ -5278,7 +6139,7 @@ var TYPE_EXTENSION_DEFINITION = exports.TYPE_EXTENSION_DEFINITION = 'TypeExtensi
 // Directive Definitions
 
 var DIRECTIVE_DEFINITION = exports.DIRECTIVE_DEFINITION = 'DirectiveDefinition';
-},{}],20:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5310,14 +6171,13 @@ function createLexer(source, options) {
     advance: advanceLexer
   };
   return lexer;
-} /*  /
-  /**
-   *  Copyright (c) 2015, Facebook, Inc.
-   *  All rights reserved.
+} /**
+   * Copyright (c) 2015-present, Facebook, Inc.
    *
-   *  This source code is licensed under the BSD-style license found in the
-   *  LICENSE file in the root directory of this source tree. An additional grant
-   *  of patent rights can be found in the PATENTS file in the same directory.
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   *
+   * 
    */
 
 function advanceLexer() {
@@ -5781,7 +6641,7 @@ function readName(source, position, line, col, prev) {
   }
   return new Tok(NAME, position, end, line, col, prev, slice.call(body, position, end));
 }
-},{"../error":15}],21:[function(require,module,exports){
+},{"../error":18}],24:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5794,14 +6654,13 @@ exports.getLocation = getLocation;
  * Takes a Source and a UTF-8 character offset, and returns the corresponding
  * line and column as a SourceLocation.
  */
-
 /**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
+ * Copyright (c) 2015-present, Facebook, Inc.
  *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * 
  */
 
 function getLocation(source, position) {
@@ -5819,7 +6678,7 @@ function getLocation(source, position) {
 /**
  * Represents a location in a Source.
  */
-},{}],22:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5849,14 +6708,13 @@ var _kinds = require('./kinds');
 /**
  * Configuration options to control parser behavior
  */
-
 /**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
+ * Copyright (c) 2015-present, Facebook, Inc.
  *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * 
  */
 
 function parse(source, options) {
@@ -6847,290 +7705,7 @@ function many(lexer, openKind, parseFn, closeKind) {
   }
   return nodes;
 }
-},{"../error":15,"./kinds":19,"./lexer":20,"./source":24}],23:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.print = print;
-
-var _visitor = require('./visitor');
-
-/**
- * Converts an AST into a string, using one set of reasonable
- * formatting rules.
- */
-function print(ast) {
-  return (0, _visitor.visit)(ast, { leave: printDocASTReducer });
-} /**
-   *  Copyright (c) 2015, Facebook, Inc.
-   *  All rights reserved.
-   *
-   *  This source code is licensed under the BSD-style license found in the
-   *  LICENSE file in the root directory of this source tree. An additional grant
-   *  of patent rights can be found in the PATENTS file in the same directory.
-   */
-
-var printDocASTReducer = {
-  Name: function Name(node) {
-    return node.value;
-  },
-  Variable: function Variable(node) {
-    return '$' + node.name;
-  },
-
-  // Document
-
-  Document: function Document(node) {
-    return join(node.definitions, '\n\n') + '\n';
-  },
-
-  OperationDefinition: function OperationDefinition(node) {
-    var op = node.operation;
-    var name = node.name;
-    var varDefs = wrap('(', join(node.variableDefinitions, ', '), ')');
-    var directives = join(node.directives, ' ');
-    var selectionSet = node.selectionSet;
-    // Anonymous queries with no directives or variable definitions can use
-    // the query short form.
-    return !name && !directives && !varDefs && op === 'query' ? selectionSet : join([op, join([name, varDefs]), directives, selectionSet], ' ');
-  },
-
-
-  VariableDefinition: function VariableDefinition(_ref) {
-    var variable = _ref.variable,
-        type = _ref.type,
-        defaultValue = _ref.defaultValue;
-    return variable + ': ' + type + wrap(' = ', defaultValue);
-  },
-
-  SelectionSet: function SelectionSet(_ref2) {
-    var selections = _ref2.selections;
-    return block(selections);
-  },
-
-  Field: function Field(_ref3) {
-    var alias = _ref3.alias,
-        name = _ref3.name,
-        args = _ref3.arguments,
-        directives = _ref3.directives,
-        selectionSet = _ref3.selectionSet;
-    return join([wrap('', alias, ': ') + name + wrap('(', join(args, ', '), ')'), join(directives, ' '), selectionSet], ' ');
-  },
-
-  Argument: function Argument(_ref4) {
-    var name = _ref4.name,
-        value = _ref4.value;
-    return name + ': ' + value;
-  },
-
-  // Fragments
-
-  FragmentSpread: function FragmentSpread(_ref5) {
-    var name = _ref5.name,
-        directives = _ref5.directives;
-    return '...' + name + wrap(' ', join(directives, ' '));
-  },
-
-  InlineFragment: function InlineFragment(_ref6) {
-    var typeCondition = _ref6.typeCondition,
-        directives = _ref6.directives,
-        selectionSet = _ref6.selectionSet;
-    return join(['...', wrap('on ', typeCondition), join(directives, ' '), selectionSet], ' ');
-  },
-
-  FragmentDefinition: function FragmentDefinition(_ref7) {
-    var name = _ref7.name,
-        typeCondition = _ref7.typeCondition,
-        directives = _ref7.directives,
-        selectionSet = _ref7.selectionSet;
-    return 'fragment ' + name + ' on ' + typeCondition + ' ' + wrap('', join(directives, ' '), ' ') + selectionSet;
-  },
-
-  // Value
-
-  IntValue: function IntValue(_ref8) {
-    var value = _ref8.value;
-    return value;
-  },
-  FloatValue: function FloatValue(_ref9) {
-    var value = _ref9.value;
-    return value;
-  },
-  StringValue: function StringValue(_ref10) {
-    var value = _ref10.value;
-    return JSON.stringify(value);
-  },
-  BooleanValue: function BooleanValue(_ref11) {
-    var value = _ref11.value;
-    return JSON.stringify(value);
-  },
-  NullValue: function NullValue() {
-    return 'null';
-  },
-  EnumValue: function EnumValue(_ref12) {
-    var value = _ref12.value;
-    return value;
-  },
-  ListValue: function ListValue(_ref13) {
-    var values = _ref13.values;
-    return '[' + join(values, ', ') + ']';
-  },
-  ObjectValue: function ObjectValue(_ref14) {
-    var fields = _ref14.fields;
-    return '{' + join(fields, ', ') + '}';
-  },
-  ObjectField: function ObjectField(_ref15) {
-    var name = _ref15.name,
-        value = _ref15.value;
-    return name + ': ' + value;
-  },
-
-  // Directive
-
-  Directive: function Directive(_ref16) {
-    var name = _ref16.name,
-        args = _ref16.arguments;
-    return '@' + name + wrap('(', join(args, ', '), ')');
-  },
-
-  // Type
-
-  NamedType: function NamedType(_ref17) {
-    var name = _ref17.name;
-    return name;
-  },
-  ListType: function ListType(_ref18) {
-    var type = _ref18.type;
-    return '[' + type + ']';
-  },
-  NonNullType: function NonNullType(_ref19) {
-    var type = _ref19.type;
-    return type + '!';
-  },
-
-  // Type System Definitions
-
-  SchemaDefinition: function SchemaDefinition(_ref20) {
-    var directives = _ref20.directives,
-        operationTypes = _ref20.operationTypes;
-    return join(['schema', join(directives, ' '), block(operationTypes)], ' ');
-  },
-
-  OperationTypeDefinition: function OperationTypeDefinition(_ref21) {
-    var operation = _ref21.operation,
-        type = _ref21.type;
-    return operation + ': ' + type;
-  },
-
-  ScalarTypeDefinition: function ScalarTypeDefinition(_ref22) {
-    var name = _ref22.name,
-        directives = _ref22.directives;
-    return join(['scalar', name, join(directives, ' ')], ' ');
-  },
-
-  ObjectTypeDefinition: function ObjectTypeDefinition(_ref23) {
-    var name = _ref23.name,
-        interfaces = _ref23.interfaces,
-        directives = _ref23.directives,
-        fields = _ref23.fields;
-    return join(['type', name, wrap('implements ', join(interfaces, ', ')), join(directives, ' '), block(fields)], ' ');
-  },
-
-  FieldDefinition: function FieldDefinition(_ref24) {
-    var name = _ref24.name,
-        args = _ref24.arguments,
-        type = _ref24.type,
-        directives = _ref24.directives;
-    return name + wrap('(', join(args, ', '), ')') + ': ' + type + wrap(' ', join(directives, ' '));
-  },
-
-  InputValueDefinition: function InputValueDefinition(_ref25) {
-    var name = _ref25.name,
-        type = _ref25.type,
-        defaultValue = _ref25.defaultValue,
-        directives = _ref25.directives;
-    return join([name + ': ' + type, wrap('= ', defaultValue), join(directives, ' ')], ' ');
-  },
-
-  InterfaceTypeDefinition: function InterfaceTypeDefinition(_ref26) {
-    var name = _ref26.name,
-        directives = _ref26.directives,
-        fields = _ref26.fields;
-    return join(['interface', name, join(directives, ' '), block(fields)], ' ');
-  },
-
-  UnionTypeDefinition: function UnionTypeDefinition(_ref27) {
-    var name = _ref27.name,
-        directives = _ref27.directives,
-        types = _ref27.types;
-    return join(['union', name, join(directives, ' '), '= ' + join(types, ' | ')], ' ');
-  },
-
-  EnumTypeDefinition: function EnumTypeDefinition(_ref28) {
-    var name = _ref28.name,
-        directives = _ref28.directives,
-        values = _ref28.values;
-    return join(['enum', name, join(directives, ' '), block(values)], ' ');
-  },
-
-  EnumValueDefinition: function EnumValueDefinition(_ref29) {
-    var name = _ref29.name,
-        directives = _ref29.directives;
-    return join([name, join(directives, ' ')], ' ');
-  },
-
-  InputObjectTypeDefinition: function InputObjectTypeDefinition(_ref30) {
-    var name = _ref30.name,
-        directives = _ref30.directives,
-        fields = _ref30.fields;
-    return join(['input', name, join(directives, ' '), block(fields)], ' ');
-  },
-
-  TypeExtensionDefinition: function TypeExtensionDefinition(_ref31) {
-    var definition = _ref31.definition;
-    return 'extend ' + definition;
-  },
-
-  DirectiveDefinition: function DirectiveDefinition(_ref32) {
-    var name = _ref32.name,
-        args = _ref32.arguments,
-        locations = _ref32.locations;
-    return 'directive @' + name + wrap('(', join(args, ', '), ')') + ' on ' + join(locations, ' | ');
-  }
-};
-
-/**
- * Given maybeArray, print an empty string if it is null or empty, otherwise
- * print all items together separated by separator if provided
- */
-function join(maybeArray, separator) {
-  return maybeArray ? maybeArray.filter(function (x) {
-    return x;
-  }).join(separator || '') : '';
-}
-
-/**
- * Given array, print each item on its own line, wrapped in an
- * indented "{ }" block.
- */
-function block(array) {
-  return array && array.length !== 0 ? indent('{\n' + join(array, '\n')) + '\n}' : '{}';
-}
-
-/**
- * If maybeString is not null or empty, then wrap with start and end, otherwise
- * print an empty string.
- */
-function wrap(start, maybeString, end) {
-  return maybeString ? start + maybeString + (end || '') : '';
-}
-
-function indent(maybeString) {
-  return maybeString && maybeString.replace(/\n/g, '\n  ');
-}
-},{"./visitor":25}],24:[function(require,module,exports){
+},{"../error":18,"./kinds":22,"./lexer":23,"./source":26}],26:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -7144,15 +7719,14 @@ var _invariant2 = _interopRequireDefault(_invariant);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-/**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
- *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
- */
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } } /**
+                                                                                                                                                           * Copyright (c) 2015-present, Facebook, Inc.
+                                                                                                                                                           *
+                                                                                                                                                           * This source code is licensed under the MIT license found in the
+                                                                                                                                                           * LICENSE file in the root directory of this source tree.
+                                                                                                                                                           *
+                                                                                                                                                           * 
+                                                                                                                                                           */
 
 /**
  * A representation of source input to GraphQL.
@@ -7171,402 +7745,10 @@ var Source = exports.Source = function Source(body, name, locationOffset) {
   !(this.locationOffset.line > 0) ? (0, _invariant2.default)(0, 'line in locationOffset is 1-indexed and must be positive') : void 0;
   !(this.locationOffset.column > 0) ? (0, _invariant2.default)(0, 'column in locationOffset is 1-indexed and must be positive') : void 0;
 };
-},{"../jsutils/invariant":18}],25:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.visit = visit;
-exports.visitInParallel = visitInParallel;
-exports.visitWithTypeInfo = visitWithTypeInfo;
-exports.getVisitFn = getVisitFn;
-/**
- *  Copyright (c) 2015, Facebook, Inc.
- *  All rights reserved.
- *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
- */
-
-var QueryDocumentKeys = exports.QueryDocumentKeys = {
-  Name: [],
-
-  Document: ['definitions'],
-  OperationDefinition: ['name', 'variableDefinitions', 'directives', 'selectionSet'],
-  VariableDefinition: ['variable', 'type', 'defaultValue'],
-  Variable: ['name'],
-  SelectionSet: ['selections'],
-  Field: ['alias', 'name', 'arguments', 'directives', 'selectionSet'],
-  Argument: ['name', 'value'],
-
-  FragmentSpread: ['name', 'directives'],
-  InlineFragment: ['typeCondition', 'directives', 'selectionSet'],
-  FragmentDefinition: ['name', 'typeCondition', 'directives', 'selectionSet'],
-
-  IntValue: [],
-  FloatValue: [],
-  StringValue: [],
-  BooleanValue: [],
-  NullValue: [],
-  EnumValue: [],
-  ListValue: ['values'],
-  ObjectValue: ['fields'],
-  ObjectField: ['name', 'value'],
-
-  Directive: ['name', 'arguments'],
-
-  NamedType: ['name'],
-  ListType: ['type'],
-  NonNullType: ['type'],
-
-  SchemaDefinition: ['directives', 'operationTypes'],
-  OperationTypeDefinition: ['type'],
-
-  ScalarTypeDefinition: ['name', 'directives'],
-  ObjectTypeDefinition: ['name', 'interfaces', 'directives', 'fields'],
-  FieldDefinition: ['name', 'arguments', 'type', 'directives'],
-  InputValueDefinition: ['name', 'type', 'defaultValue', 'directives'],
-  InterfaceTypeDefinition: ['name', 'directives', 'fields'],
-  UnionTypeDefinition: ['name', 'directives', 'types'],
-  EnumTypeDefinition: ['name', 'directives', 'values'],
-  EnumValueDefinition: ['name', 'directives'],
-  InputObjectTypeDefinition: ['name', 'directives', 'fields'],
-
-  TypeExtensionDefinition: ['definition'],
-
-  DirectiveDefinition: ['name', 'arguments', 'locations']
-};
-
-var BREAK = exports.BREAK = {};
-
-/**
- * visit() will walk through an AST using a depth first traversal, calling
- * the visitor's enter function at each node in the traversal, and calling the
- * leave function after visiting that node and all of its child nodes.
- *
- * By returning different values from the enter and leave functions, the
- * behavior of the visitor can be altered, including skipping over a sub-tree of
- * the AST (by returning false), editing the AST by returning a value or null
- * to remove the value, or to stop the whole traversal by returning BREAK.
- *
- * When using visit() to edit an AST, the original AST will not be modified, and
- * a new version of the AST with the changes applied will be returned from the
- * visit function.
- *
- *     const editedAST = visit(ast, {
- *       enter(node, key, parent, path, ancestors) {
- *         // @return
- *         //   undefined: no action
- *         //   false: skip visiting this node
- *         //   visitor.BREAK: stop visiting altogether
- *         //   null: delete this node
- *         //   any value: replace this node with the returned value
- *       },
- *       leave(node, key, parent, path, ancestors) {
- *         // @return
- *         //   undefined: no action
- *         //   false: no action
- *         //   visitor.BREAK: stop visiting altogether
- *         //   null: delete this node
- *         //   any value: replace this node with the returned value
- *       }
- *     });
- *
- * Alternatively to providing enter() and leave() functions, a visitor can
- * instead provide functions named the same as the kinds of AST nodes, or
- * enter/leave visitors at a named key, leading to four permutations of
- * visitor API:
- *
- * 1) Named visitors triggered when entering a node a specific kind.
- *
- *     visit(ast, {
- *       Kind(node) {
- *         // enter the "Kind" node
- *       }
- *     })
- *
- * 2) Named visitors that trigger upon entering and leaving a node of
- *    a specific kind.
- *
- *     visit(ast, {
- *       Kind: {
- *         enter(node) {
- *           // enter the "Kind" node
- *         }
- *         leave(node) {
- *           // leave the "Kind" node
- *         }
- *       }
- *     })
- *
- * 3) Generic visitors that trigger upon entering and leaving any node.
- *
- *     visit(ast, {
- *       enter(node) {
- *         // enter any node
- *       },
- *       leave(node) {
- *         // leave any node
- *       }
- *     })
- *
- * 4) Parallel visitors for entering and leaving nodes of a specific kind.
- *
- *     visit(ast, {
- *       enter: {
- *         Kind(node) {
- *           // enter the "Kind" node
- *         }
- *       },
- *       leave: {
- *         Kind(node) {
- *           // leave the "Kind" node
- *         }
- *       }
- *     })
- */
-function visit(root, visitor, keyMap) {
-  var visitorKeys = keyMap || QueryDocumentKeys;
-
-  var stack = void 0;
-  var inArray = Array.isArray(root);
-  var keys = [root];
-  var index = -1;
-  var edits = [];
-  var parent = void 0;
-  var path = [];
-  var ancestors = [];
-  var newRoot = root;
-
-  do {
-    index++;
-    var isLeaving = index === keys.length;
-    var key = void 0;
-    var node = void 0;
-    var isEdited = isLeaving && edits.length !== 0;
-    if (isLeaving) {
-      key = ancestors.length === 0 ? undefined : path.pop();
-      node = parent;
-      parent = ancestors.pop();
-      if (isEdited) {
-        if (inArray) {
-          node = node.slice();
-        } else {
-          var clone = {};
-          for (var k in node) {
-            if (node.hasOwnProperty(k)) {
-              clone[k] = node[k];
-            }
-          }
-          node = clone;
-        }
-        var editOffset = 0;
-        for (var ii = 0; ii < edits.length; ii++) {
-          var editKey = edits[ii][0];
-          var editValue = edits[ii][1];
-          if (inArray) {
-            editKey -= editOffset;
-          }
-          if (inArray && editValue === null) {
-            node.splice(editKey, 1);
-            editOffset++;
-          } else {
-            node[editKey] = editValue;
-          }
-        }
-      }
-      index = stack.index;
-      keys = stack.keys;
-      edits = stack.edits;
-      inArray = stack.inArray;
-      stack = stack.prev;
-    } else {
-      key = parent ? inArray ? index : keys[index] : undefined;
-      node = parent ? parent[key] : newRoot;
-      if (node === null || node === undefined) {
-        continue;
-      }
-      if (parent) {
-        path.push(key);
-      }
-    }
-
-    var result = void 0;
-    if (!Array.isArray(node)) {
-      if (!isNode(node)) {
-        throw new Error('Invalid AST Node: ' + JSON.stringify(node));
-      }
-      var visitFn = getVisitFn(visitor, node.kind, isLeaving);
-      if (visitFn) {
-        result = visitFn.call(visitor, node, key, parent, path, ancestors);
-
-        if (result === BREAK) {
-          break;
-        }
-
-        if (result === false) {
-          if (!isLeaving) {
-            path.pop();
-            continue;
-          }
-        } else if (result !== undefined) {
-          edits.push([key, result]);
-          if (!isLeaving) {
-            if (isNode(result)) {
-              node = result;
-            } else {
-              path.pop();
-              continue;
-            }
-          }
-        }
-      }
-    }
-
-    if (result === undefined && isEdited) {
-      edits.push([key, node]);
-    }
-
-    if (!isLeaving) {
-      stack = { inArray: inArray, index: index, keys: keys, edits: edits, prev: stack };
-      inArray = Array.isArray(node);
-      keys = inArray ? node : visitorKeys[node.kind] || [];
-      index = -1;
-      edits = [];
-      if (parent) {
-        ancestors.push(parent);
-      }
-      parent = node;
-    }
-  } while (stack !== undefined);
-
-  if (edits.length !== 0) {
-    newRoot = edits[edits.length - 1][1];
-  }
-
-  return newRoot;
-}
-
-function isNode(maybeNode) {
-  return maybeNode && typeof maybeNode.kind === 'string';
-}
-
-/**
- * Creates a new visitor instance which delegates to many visitors to run in
- * parallel. Each visitor will be visited for each node before moving on.
- *
- * If a prior visitor edits a node, no following visitors will see that node.
- */
-function visitInParallel(visitors) {
-  var skipping = new Array(visitors.length);
-
-  return {
-    enter: function enter(node) {
-      for (var i = 0; i < visitors.length; i++) {
-        if (!skipping[i]) {
-          var fn = getVisitFn(visitors[i], node.kind, /* isLeaving */false);
-          if (fn) {
-            var result = fn.apply(visitors[i], arguments);
-            if (result === false) {
-              skipping[i] = node;
-            } else if (result === BREAK) {
-              skipping[i] = BREAK;
-            } else if (result !== undefined) {
-              return result;
-            }
-          }
-        }
-      }
-    },
-    leave: function leave(node) {
-      for (var i = 0; i < visitors.length; i++) {
-        if (!skipping[i]) {
-          var fn = getVisitFn(visitors[i], node.kind, /* isLeaving */true);
-          if (fn) {
-            var result = fn.apply(visitors[i], arguments);
-            if (result === BREAK) {
-              skipping[i] = BREAK;
-            } else if (result !== undefined && result !== false) {
-              return result;
-            }
-          }
-        } else if (skipping[i] === node) {
-          skipping[i] = null;
-        }
-      }
-    }
-  };
-}
-
-/**
- * Creates a new visitor instance which maintains a provided TypeInfo instance
- * along with visiting visitor.
- */
-function visitWithTypeInfo(typeInfo, visitor) {
-  return {
-    enter: function enter(node) {
-      typeInfo.enter(node);
-      var fn = getVisitFn(visitor, node.kind, /* isLeaving */false);
-      if (fn) {
-        var result = fn.apply(visitor, arguments);
-        if (result !== undefined) {
-          typeInfo.leave(node);
-          if (isNode(result)) {
-            typeInfo.enter(result);
-          }
-        }
-        return result;
-      }
-    },
-    leave: function leave(node) {
-      var fn = getVisitFn(visitor, node.kind, /* isLeaving */true);
-      var result = void 0;
-      if (fn) {
-        result = fn.apply(visitor, arguments);
-      }
-      typeInfo.leave(node);
-      return result;
-    }
-  };
-}
-
-/**
- * Given a visitor instance, if it is leaving or not, and a node kind, return
- * the function the visitor runtime should call.
- */
-function getVisitFn(visitor, kind, isLeaving) {
-  var kindVisitor = visitor[kind];
-  if (kindVisitor) {
-    if (!isLeaving && typeof kindVisitor === 'function') {
-      // { Kind() {} }
-      return kindVisitor;
-    }
-    var kindSpecificVisitor = isLeaving ? kindVisitor.leave : kindVisitor.enter;
-    if (typeof kindSpecificVisitor === 'function') {
-      // { Kind: { enter() {}, leave() {} } }
-      return kindSpecificVisitor;
-    }
-  } else {
-    var specificVisitor = isLeaving ? visitor.leave : visitor.enter;
-    if (specificVisitor) {
-      if (typeof specificVisitor === 'function') {
-        // { enter() {}, leave() {} }
-        return specificVisitor;
-      }
-      var specificKindVisitor = specificVisitor[kind];
-      if (typeof specificKindVisitor === 'function') {
-        // { enter: { Kind() {} }, leave: { Kind() {} } }
-        return specificKindVisitor;
-      }
-    }
-  }
-}
-},{}],26:[function(require,module,exports){
+},{"../jsutils/invariant":21}],27:[function(require,module,exports){
 module.exports = window.FormData
 
-},{}],27:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 var root = require('./_root');
 
 /** Built-in value references. */
@@ -7574,7 +7756,7 @@ var Symbol = root.Symbol;
 
 module.exports = Symbol;
 
-},{"./_root":34}],28:[function(require,module,exports){
+},{"./_root":35}],29:[function(require,module,exports){
 var Symbol = require('./_Symbol'),
     getRawTag = require('./_getRawTag'),
     objectToString = require('./_objectToString');
@@ -7604,7 +7786,7 @@ function baseGetTag(value) {
 
 module.exports = baseGetTag;
 
-},{"./_Symbol":27,"./_getRawTag":31,"./_objectToString":32}],29:[function(require,module,exports){
+},{"./_Symbol":28,"./_getRawTag":32,"./_objectToString":33}],30:[function(require,module,exports){
 (function (global){
 /** Detect free variable `global` from Node.js. */
 var freeGlobal = typeof global == 'object' && global && global.Object === Object && global;
@@ -7612,7 +7794,7 @@ var freeGlobal = typeof global == 'object' && global && global.Object === Object
 module.exports = freeGlobal;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],30:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 var overArg = require('./_overArg');
 
 /** Built-in value references. */
@@ -7620,7 +7802,7 @@ var getPrototype = overArg(Object.getPrototypeOf, Object);
 
 module.exports = getPrototype;
 
-},{"./_overArg":33}],31:[function(require,module,exports){
+},{"./_overArg":34}],32:[function(require,module,exports){
 var Symbol = require('./_Symbol');
 
 /** Used for built-in method references. */
@@ -7668,7 +7850,7 @@ function getRawTag(value) {
 
 module.exports = getRawTag;
 
-},{"./_Symbol":27}],32:[function(require,module,exports){
+},{"./_Symbol":28}],33:[function(require,module,exports){
 /** Used for built-in method references. */
 var objectProto = Object.prototype;
 
@@ -7692,7 +7874,7 @@ function objectToString(value) {
 
 module.exports = objectToString;
 
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 /**
  * Creates a unary function that invokes `func` with its argument transformed.
  *
@@ -7709,7 +7891,7 @@ function overArg(func, transform) {
 
 module.exports = overArg;
 
-},{}],34:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 var freeGlobal = require('./_freeGlobal');
 
 /** Detect free variable `self`. */
@@ -7720,7 +7902,7 @@ var root = freeGlobal || freeSelf || Function('return this')();
 
 module.exports = root;
 
-},{"./_freeGlobal":29}],35:[function(require,module,exports){
+},{"./_freeGlobal":30}],36:[function(require,module,exports){
 /**
  * Checks if `value` is object-like. A value is object-like if it's not `null`
  * and has a `typeof` result of "object".
@@ -7751,7 +7933,7 @@ function isObjectLike(value) {
 
 module.exports = isObjectLike;
 
-},{}],36:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 var baseGetTag = require('./_baseGetTag'),
     getPrototype = require('./_getPrototype'),
     isObjectLike = require('./isObjectLike');
@@ -7815,193 +7997,7 @@ function isPlainObject(value) {
 
 module.exports = isPlainObject;
 
-},{"./_baseGetTag":28,"./_getPrototype":30,"./isObjectLike":35}],37:[function(require,module,exports){
-// shim for using process in browser
-var process = module.exports = {};
-
-// cached from whatever global is present so that test runners that stub it
-// don't break things.  But we need to wrap it in a try catch in case it is
-// wrapped in strict mode code which doesn't define any globals.  It's inside a
-// function because try/catches deoptimize in certain engines.
-
-var cachedSetTimeout;
-var cachedClearTimeout;
-
-function defaultSetTimout() {
-    throw new Error('setTimeout has not been defined');
-}
-function defaultClearTimeout () {
-    throw new Error('clearTimeout has not been defined');
-}
-(function () {
-    try {
-        if (typeof setTimeout === 'function') {
-            cachedSetTimeout = setTimeout;
-        } else {
-            cachedSetTimeout = defaultSetTimout;
-        }
-    } catch (e) {
-        cachedSetTimeout = defaultSetTimout;
-    }
-    try {
-        if (typeof clearTimeout === 'function') {
-            cachedClearTimeout = clearTimeout;
-        } else {
-            cachedClearTimeout = defaultClearTimeout;
-        }
-    } catch (e) {
-        cachedClearTimeout = defaultClearTimeout;
-    }
-} ())
-function runTimeout(fun) {
-    if (cachedSetTimeout === setTimeout) {
-        //normal enviroments in sane situations
-        return setTimeout(fun, 0);
-    }
-    // if setTimeout wasn't available but was latter defined
-    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
-        cachedSetTimeout = setTimeout;
-        return setTimeout(fun, 0);
-    }
-    try {
-        // when when somebody has screwed with setTimeout but no I.E. maddness
-        return cachedSetTimeout(fun, 0);
-    } catch(e){
-        try {
-            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
-            return cachedSetTimeout.call(null, fun, 0);
-        } catch(e){
-            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
-            return cachedSetTimeout.call(this, fun, 0);
-        }
-    }
-
-
-}
-function runClearTimeout(marker) {
-    if (cachedClearTimeout === clearTimeout) {
-        //normal enviroments in sane situations
-        return clearTimeout(marker);
-    }
-    // if clearTimeout wasn't available but was latter defined
-    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
-        cachedClearTimeout = clearTimeout;
-        return clearTimeout(marker);
-    }
-    try {
-        // when when somebody has screwed with setTimeout but no I.E. maddness
-        return cachedClearTimeout(marker);
-    } catch (e){
-        try {
-            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
-            return cachedClearTimeout.call(null, marker);
-        } catch (e){
-            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
-            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
-            return cachedClearTimeout.call(this, marker);
-        }
-    }
-
-
-
-}
-var queue = [];
-var draining = false;
-var currentQueue;
-var queueIndex = -1;
-
-function cleanUpNextTick() {
-    if (!draining || !currentQueue) {
-        return;
-    }
-    draining = false;
-    if (currentQueue.length) {
-        queue = currentQueue.concat(queue);
-    } else {
-        queueIndex = -1;
-    }
-    if (queue.length) {
-        drainQueue();
-    }
-}
-
-function drainQueue() {
-    if (draining) {
-        return;
-    }
-    var timeout = runTimeout(cleanUpNextTick);
-    draining = true;
-
-    var len = queue.length;
-    while(len) {
-        currentQueue = queue;
-        queue = [];
-        while (++queueIndex < len) {
-            if (currentQueue) {
-                currentQueue[queueIndex].run();
-            }
-        }
-        queueIndex = -1;
-        len = queue.length;
-    }
-    currentQueue = null;
-    draining = false;
-    runClearTimeout(timeout);
-}
-
-process.nextTick = function (fun) {
-    var args = new Array(arguments.length - 1);
-    if (arguments.length > 1) {
-        for (var i = 1; i < arguments.length; i++) {
-            args[i - 1] = arguments[i];
-        }
-    }
-    queue.push(new Item(fun, args));
-    if (queue.length === 1 && !draining) {
-        runTimeout(drainQueue);
-    }
-};
-
-// v8 likes predictible objects
-function Item(fun, array) {
-    this.fun = fun;
-    this.array = array;
-}
-Item.prototype.run = function () {
-    this.fun.apply(null, this.array);
-};
-process.title = 'browser';
-process.browser = true;
-process.env = {};
-process.argv = [];
-process.version = ''; // empty string to avoid regexp issues
-process.versions = {};
-
-function noop() {}
-
-process.on = noop;
-process.addListener = noop;
-process.once = noop;
-process.off = noop;
-process.removeListener = noop;
-process.removeAllListeners = noop;
-process.emit = noop;
-process.prependListener = noop;
-process.prependOnceListener = noop;
-
-process.listeners = function (name) { return [] }
-
-process.binding = function (name) {
-    throw new Error('process.binding is not supported');
-};
-
-process.cwd = function () { return '/' };
-process.chdir = function (dir) {
-    throw new Error('process.chdir is not supported');
-};
-process.umask = function() { return 0; };
-
-},{}],38:[function(require,module,exports){
+},{"./_baseGetTag":29,"./_getPrototype":31,"./isObjectLike":36}],38:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -8258,7 +8254,7 @@ function combineReducers(reducers) {
   };
 }
 }).call(this,require('_process'))
-},{"./createStore":42,"./utils/warning":44,"_process":37,"lodash/isPlainObject":36}],41:[function(require,module,exports){
+},{"./createStore":42,"./utils/warning":44,"_process":8,"lodash/isPlainObject":37}],41:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -8557,7 +8553,7 @@ var ActionTypes = exports.ActionTypes = {
     replaceReducer: replaceReducer
   }, _ref2[_symbolObservable2['default']] = observable, _ref2;
 }
-},{"lodash/isPlainObject":36,"symbol-observable":45}],43:[function(require,module,exports){
+},{"lodash/isPlainObject":37,"symbol-observable":45}],43:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -8606,7 +8602,7 @@ exports.bindActionCreators = _bindActionCreators2['default'];
 exports.applyMiddleware = _applyMiddleware2['default'];
 exports.compose = _compose2['default'];
 }).call(this,require('_process'))
-},{"./applyMiddleware":38,"./bindActionCreators":39,"./combineReducers":40,"./compose":41,"./createStore":42,"./utils/warning":44,"_process":37}],44:[function(require,module,exports){
+},{"./applyMiddleware":38,"./bindActionCreators":39,"./combineReducers":40,"./compose":41,"./createStore":42,"./utils/warning":44,"_process":8}],44:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -9561,22 +9557,24 @@ Object.defineProperty(exports, "__esModule", {
     value: true
 });
 
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }(); /* global localStorage, fetch, noop */
 
 
-var _templateObject = _taggedTemplateLiteral(['\n                    mutation registerUser($username: String!, $email: Email!, $name: String!, $password: String!) {\n                        registerUser(\n                            user: {\n                                username: $username,\n                                email: $email,\n                                name: $name,\n                                password: $password\n                            }\n                        ) {\n                            user {\n                                _id\n                                username\n                                email\n                                name\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            errors {\n                                field\n                                message\n                            }\n                        }\n                    }\n                '], ['\n                    mutation registerUser($username: String!, $email: Email!, $name: String!, $password: String!) {\n                        registerUser(\n                            user: {\n                                username: $username,\n                                email: $email,\n                                name: $name,\n                                password: $password\n                            }\n                        ) {\n                            user {\n                                _id\n                                username\n                                email\n                                name\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            errors {\n                                field\n                                message\n                            }\n                        }\n                    }\n                ']),
-    _templateObject2 = _taggedTemplateLiteral(['\n                    mutation loginUser($identifier: String!, $password: String!) {\n                        loginUser(\n                            identifier: $identifier,\n                            password: $password\n                        ) {\n                            loginSession {\n                                sessionCode\n                                createdAt\n                                expires\n                                ipAddress\n                                userAgent\n                            }\n                            errors {\n                                field\n                                message\n                            }\n                        }\n                    }\n                '], ['\n                    mutation loginUser($identifier: String!, $password: String!) {\n                        loginUser(\n                            identifier: $identifier,\n                            password: $password\n                        ) {\n                            loginSession {\n                                sessionCode\n                                createdAt\n                                expires\n                                ipAddress\n                                userAgent\n                            }\n                            errors {\n                                field\n                                message\n                            }\n                        }\n                    }\n                ']),
-    _templateObject3 = _taggedTemplateLiteral(['\n                    query {\n                        getUser {\n                            _id\n                            username\n                            email\n                            name\n                            active\n                            registered\n                            avatarUrl\n                        }\n                    }\n                '], ['\n                    query {\n                        getUser {\n                            _id\n                            username\n                            email\n                            name\n                            active\n                            registered\n                            avatarUrl\n                        }\n                    }\n                ']),
-    _templateObject4 = _taggedTemplateLiteral(['\n                    mutation logoutUser($sessionCode: String) {\n                        logoutUser(\n                            sessionCode: $sessionCode\n                        )\n                    }\n                '], ['\n                    mutation logoutUser($sessionCode: String) {\n                        logoutUser(\n                            sessionCode: $sessionCode\n                        )\n                    }\n                ']),
-    _templateObject5 = _taggedTemplateLiteral(['\n                    mutation createEntity($type: String!, $title: String, $body: RichContent, $metadata: JSON, $scopeID: String, $parentEntityID: String) {\n                        createEntity(\n                            type: $type,\n                            entity: {\n                                title: $title,\n                                body: $body,\n                                metadata: $metadata\n                            },\n                            scopeID: $scopeID,\n                            parentEntityID: $parentEntityID\n                        ) {\n                            _id\n                            title\n                            body\n                            metadata\n                            type\n                            createdAt\n                            createdBy {\n                                _id\n                                name\n                                username\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            archived\n                        }\n                    }\n                '], ['\n                    mutation createEntity($type: String!, $title: String, $body: RichContent, $metadata: JSON, $scopeID: String, $parentEntityID: String) {\n                        createEntity(\n                            type: $type,\n                            entity: {\n                                title: $title,\n                                body: $body,\n                                metadata: $metadata\n                            },\n                            scopeID: $scopeID,\n                            parentEntityID: $parentEntityID\n                        ) {\n                            _id\n                            title\n                            body\n                            metadata\n                            type\n                            createdAt\n                            createdBy {\n                                _id\n                                name\n                                username\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            archived\n                        }\n                    }\n                ']),
-    _templateObject6 = _taggedTemplateLiteral(['\n                    query getEntity($id: String!) {\n                        getEntity(\n                            id: $id\n                        ) {\n                            _id\n                            title\n                            body\n                            metadata\n                            type\n                            createdAt\n                            createdBy {\n                                _id\n                                name\n                                username\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            archived\n                        }\n                    }\n                '], ['\n                    query getEntity($id: String!) {\n                        getEntity(\n                            id: $id\n                        ) {\n                            _id\n                            title\n                            body\n                            metadata\n                            type\n                            createdAt\n                            createdBy {\n                                _id\n                                name\n                                username\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            archived\n                        }\n                    }\n                ']),
-    _templateObject7 = _taggedTemplateLiteral(['\n                    mutation modifyEntity($id: String!, $title: String, $body: RichContent, $metadata: JSON) {\n                        modifyEntity(\n                            id: $id,\n                            entity: {\n                                title: $title,\n                                body: $body,\n                                metadata: $metadata\n                            }\n                        ) {\n                            _id\n                            title\n                            body\n                            metadata\n                            type\n                            createdAt\n                            createdBy {\n                                _id\n                                name\n                                username\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            archived\n                        }\n                    }\n                '], ['\n                    mutation modifyEntity($id: String!, $title: String, $body: RichContent, $metadata: JSON) {\n                        modifyEntity(\n                            id: $id,\n                            entity: {\n                                title: $title,\n                                body: $body,\n                                metadata: $metadata\n                            }\n                        ) {\n                            _id\n                            title\n                            body\n                            metadata\n                            type\n                            createdAt\n                            createdBy {\n                                _id\n                                name\n                                username\n                                active\n                                registered\n                                avatarUrl\n                            }\n                            archived\n                        }\n                    }\n                ']),
-    _templateObject8 = _taggedTemplateLiteral(['\n                    query getEntities ($parentID: String!, $childType: String, $limit: Int = 0, $offset: Int = 0) {\n                        getEntities (\n                            parentID: $parentID,\n                            childType: $childType,\n                            limit: $limit,\n                            offset: $offset\n                        ) {\n                            result {\n                                total\n                                limit\n                                offset\n                            }\n                            items {\n                                _id\n                                title\n                                metadata\n                                file {\n                                    filename\n                                    filesize\n                                    status\n                                }\n                                type\n                                createdAt\n                                createdBy {\n                                    _id\n                                    username\n                                    name\n                                    registered\n                                    active\n                                    avatarUrl\n                                }\n                            }\n                        }\n                    }\n                '], ['\n                    query getEntities ($parentID: String!, $childType: String, $limit: Int = 0, $offset: Int = 0) {\n                        getEntities (\n                            parentID: $parentID,\n                            childType: $childType,\n                            limit: $limit,\n                            offset: $offset\n                        ) {\n                            result {\n                                total\n                                limit\n                                offset\n                            }\n                            items {\n                                _id\n                                title\n                                metadata\n                                file {\n                                    filename\n                                    filesize\n                                    status\n                                }\n                                type\n                                createdAt\n                                createdBy {\n                                    _id\n                                    username\n                                    name\n                                    registered\n                                    active\n                                    avatarUrl\n                                }\n                            }\n                        }\n                    }\n                ']),
-    _templateObject9 = _taggedTemplateLiteral(['\n                    query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $direction: String = "target", $limit: Int = 0, $offset: Int = 0) {\n                        getRelatedEntities (\n                            sourceEntityID: $sourceEntityID,\n                            relationship: $relationship,\n                            direction: $direction,\n                            limit: $limit,\n                            offset: $offset\n                        ) {\n                            result {\n                                total\n                                limit\n                                offset\n                            }\n                            items {\n                                _id\n                                title\n                                metadata\n                                file {\n                                    filename\n                                    filesize\n                                    status\n                                }\n                                type\n                                createdAt\n                                createdBy {\n                                    _id\n                                    username\n                                    name\n                                    registered\n                                    active\n                                    avatarUrl\n                                }\n                            }\n                        }\n                    }\n                '], ['\n                    query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $direction: String = "target", $limit: Int = 0, $offset: Int = 0) {\n                        getRelatedEntities (\n                            sourceEntityID: $sourceEntityID,\n                            relationship: $relationship,\n                            direction: $direction,\n                            limit: $limit,\n                            offset: $offset\n                        ) {\n                            result {\n                                total\n                                limit\n                                offset\n                            }\n                            items {\n                                _id\n                                title\n                                metadata\n                                file {\n                                    filename\n                                    filesize\n                                    status\n                                }\n                                type\n                                createdAt\n                                createdBy {\n                                    _id\n                                    username\n                                    name\n                                    registered\n                                    active\n                                    avatarUrl\n                                }\n                            }\n                        }\n                    }\n                ']),
-    _templateObject10 = _taggedTemplateLiteral(['\n                    mutation prepareFileUpload($entityID: String!, $filename: String!, $type: String, $filesize: Int!) {\n                        prepareFileUpload(\n                            entityID: $entityID,\n                            filename: $filename,\n                            type: $type,\n                            filesize: $filesize\n                        )\n                    }\n                '], ['\n                    mutation prepareFileUpload($entityID: String!, $filename: String!, $type: String, $filesize: Int!) {\n                        prepareFileUpload(\n                            entityID: $entityID,\n                            filename: $filename,\n                            type: $type,\n                            filesize: $filesize\n                        )\n                    }\n                ']),
-    _templateObject11 = _taggedTemplateLiteral(['\n                    mutation appendFileChunk($entityID: String!) {\n                        appendFileChunk(\n                            entityID: $entityID\n                        )\n                    }\n                '], ['\n                    mutation appendFileChunk($entityID: String!) {\n                        appendFileChunk(\n                            entityID: $entityID\n                        )\n                    }\n                ']);
+var _templateObject = _taggedTemplateLiteral(['\n                mutation registerUser($username: String!, $email: Email!, $name: String!, $password: String!) {\n                    registerUser(\n                        user: {\n                            username: $username,\n                            email: $email,\n                            name: $name,\n                            password: $password\n                        }\n                    ) {\n                        _id\n                        username\n                        email\n                        name\n                        active\n                        registered\n                        avatarUrl\n                    }\n                }\n            '], ['\n                mutation registerUser($username: String!, $email: Email!, $name: String!, $password: String!) {\n                    registerUser(\n                        user: {\n                            username: $username,\n                            email: $email,\n                            name: $name,\n                            password: $password\n                        }\n                    ) {\n                        _id\n                        username\n                        email\n                        name\n                        active\n                        registered\n                        avatarUrl\n                    }\n                }\n            ']),
+    _templateObject2 = _taggedTemplateLiteral(['\n                mutation loginUser($identifier: String!, $password: String!) {\n                    loginUser(\n                        identifier: $identifier,\n                        password: $password\n                    ) {\n                        sessionCode\n                    }\n                }\n            '], ['\n                mutation loginUser($identifier: String!, $password: String!) {\n                    loginUser(\n                        identifier: $identifier,\n                        password: $password\n                    ) {\n                        sessionCode\n                    }\n                }\n            ']),
+    _templateObject3 = _taggedTemplateLiteral(['\n                query getUser {\n                    getUser {\n                        _id\n                        username\n                        email\n                        name\n                        active\n                        registered\n                        avatarUrl\n                    }\n                }\n            '], ['\n                query getUser {\n                    getUser {\n                        _id\n                        username\n                        email\n                        name\n                        active\n                        registered\n                        avatarUrl\n                    }\n                }\n            ']),
+    _templateObject4 = _taggedTemplateLiteral(['\n                mutation logoutUser($sessionCode: String) {\n                    logoutUser(\n                        sessionCode: $sessionCode\n                    )\n                }\n            '], ['\n                mutation logoutUser($sessionCode: String) {\n                    logoutUser(\n                        sessionCode: $sessionCode\n                    )\n                }\n            ']),
+    _templateObject5 = _taggedTemplateLiteral(['\n                mutation createEntity($type: String!, $entity: EntityInputData!, $scopeID: String, $parentEntityID: String, $placeBeforeID: String, $placeAfterID: String) {\n                    createEntity(\n                        type: $type,\n                        entity: $entity,\n                        scopeID: $scopeID,\n                        parentEntityID: $parentEntityID,\n                        placeBeforeID: $placeBeforeID,\n                        placeAfterID: $placeAfterID\n                    ) {\n                        _id\n                        title\n                        body\n                        metadata\n                        type\n                        createdAt\n                        archived\n                    }\n                }\n            '], ['\n                mutation createEntity($type: String!, $entity: EntityInputData!, $scopeID: String, $parentEntityID: String, $placeBeforeID: String, $placeAfterID: String) {\n                    createEntity(\n                        type: $type,\n                        entity: $entity,\n                        scopeID: $scopeID,\n                        parentEntityID: $parentEntityID,\n                        placeBeforeID: $placeBeforeID,\n                        placeAfterID: $placeAfterID\n                    ) {\n                        _id\n                        title\n                        body\n                        metadata\n                        type\n                        createdAt\n                        archived\n                    }\n                }\n            ']),
+    _templateObject6 = _taggedTemplateLiteral(['\n                query getEntity ($id: String!, $waitForFile: Boolean, $waitTimeout: Int) {\n                    getEntity (\n                        id: $id,\n                        waitForFile: $waitForFile,\n                        waitTimeout: $waitTimeout\n                    ) {\n                        _id\n                        title\n                        body\n                        metadata\n                        file {\n                            filename\n                            filesize\n                            type {\n                                ext\n                                mimetype\n                            }\n                            hash\n                            width\n                            height\n                            status\n                            url\n                            variants {\n                                name\n                                content\n                                filesize\n                                mimetype\n                                url\n                                width\n                                height\n                            }\n                        }\n                        type\n                        createdAt\n                        archived\n                    }\n                }\n            '], ['\n                query getEntity ($id: String!, $waitForFile: Boolean, $waitTimeout: Int) {\n                    getEntity (\n                        id: $id,\n                        waitForFile: $waitForFile,\n                        waitTimeout: $waitTimeout\n                    ) {\n                        _id\n                        title\n                        body\n                        metadata\n                        file {\n                            filename\n                            filesize\n                            type {\n                                ext\n                                mimetype\n                            }\n                            hash\n                            width\n                            height\n                            status\n                            url\n                            variants {\n                                name\n                                content\n                                filesize\n                                mimetype\n                                url\n                                width\n                                height\n                            }\n                        }\n                        type\n                        createdAt\n                        archived\n                    }\n                }\n            ']),
+    _templateObject7 = _taggedTemplateLiteral(['\n                mutation modifyEntity($id: String!, $entity: EntityInputData, $placeAfterID: String, $placeBeforeID: String) {\n                    modifyEntity(\n                        id: $id,\n                        entity: $entity,\n                        placeAfterID: $placeAfterID,\n                        placeBeforeID: $placeBeforeID\n                    ) {\n                        _id\n                        title\n                        body\n                        metadata\n                        type\n                        createdAt\n                        archived\n                    }\n                }\n            '], ['\n                mutation modifyEntity($id: String!, $entity: EntityInputData, $placeAfterID: String, $placeBeforeID: String) {\n                    modifyEntity(\n                        id: $id,\n                        entity: $entity,\n                        placeAfterID: $placeAfterID,\n                        placeBeforeID: $placeBeforeID\n                    ) {\n                        _id\n                        title\n                        body\n                        metadata\n                        type\n                        createdAt\n                        archived\n                    }\n                }\n            ']),
+    _templateObject8 = _taggedTemplateLiteral(['\n                mutation archiveEntity($id: String!) {\n                    archiveEntity(\n                        id: $id\n                    )\n                }\n            '], ['\n                mutation archiveEntity($id: String!) {\n                    archiveEntity(\n                        id: $id\n                    )\n                }\n            ']),
+    _templateObject9 = _taggedTemplateLiteral(['\n                mutation unarchiveEntity($id: String!) {\n                    unarchiveEntity(\n                        id: $id\n                    )\n                }\n            '], ['\n                mutation unarchiveEntity($id: String!) {\n                    unarchiveEntity(\n                        id: $id\n                    )\n                }\n            ']),
+    _templateObject10 = _taggedTemplateLiteral(['\n                mutation relateEntity($sourceEntityID: String!, $targetEntityID: String!, $relationship: String!, $metadata: JSON, $placeAfterID: String, $placeBeforeID: String) {\n                    relateEntity(\n                        sourceEntityID: $sourceEntityID,\n                        targetEntityID: $targetEntityID,\n                        relationship: $relationship,\n                        metadata: $metadata,\n                        placeAfterID: $placeAfterID,\n                        placeBeforeID: $placeBeforeID\n                    )\n                }\n            '], ['\n                mutation relateEntity($sourceEntityID: String!, $targetEntityID: String!, $relationship: String!, $metadata: JSON, $placeAfterID: String, $placeBeforeID: String) {\n                    relateEntity(\n                        sourceEntityID: $sourceEntityID,\n                        targetEntityID: $targetEntityID,\n                        relationship: $relationship,\n                        metadata: $metadata,\n                        placeAfterID: $placeAfterID,\n                        placeBeforeID: $placeBeforeID\n                    )\n                }\n            ']),
+    _templateObject11 = _taggedTemplateLiteral(['\n                mutation unrelateEntity($sourceEntityID: String!, $targetEntityID: String!, $relationship: String!) {\n                    unrelateEntity(\n                        sourceEntityID: $sourceEntityID,\n                        targetEntityID: $targetEntityID,\n                        relationship: $relationship\n                    )\n                }\n            '], ['\n                mutation unrelateEntity($sourceEntityID: String!, $targetEntityID: String!, $relationship: String!) {\n                    unrelateEntity(\n                        sourceEntityID: $sourceEntityID,\n                        targetEntityID: $targetEntityID,\n                        relationship: $relationship\n                    )\n                }\n            ']),
+    _templateObject12 = _taggedTemplateLiteral(['\n                query getEntities ($parentID: String!, $childType: String, $limit: Int, $offset: Int) {\n                    getEntities (\n                        parentID: $parentID,\n                        childType: $childType,\n                        limit: $limit,\n                        offset: $offset\n                    ) {\n                        result {\n                            total\n                            limit\n                            offset\n                        }\n                        items {\n                            _id\n                            title\n                            type\n                        }\n                    }\n                }\n            '], ['\n                query getEntities ($parentID: String!, $childType: String, $limit: Int, $offset: Int) {\n                    getEntities (\n                        parentID: $parentID,\n                        childType: $childType,\n                        limit: $limit,\n                        offset: $offset\n                    ) {\n                        result {\n                            total\n                            limit\n                            offset\n                        }\n                        items {\n                            _id\n                            title\n                            type\n                        }\n                    }\n                }\n            ']),
+    _templateObject13 = _taggedTemplateLiteral(['\n                query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $type: String, $direction: String, $limit: Int, $offset: Int) {\n                    getRelatedEntities (\n                        sourceEntityID: $sourceEntityID,\n                        relationship: $relationship,\n                        type: $type,\n                        direction: $direction,\n                        limit: $limit,\n                        offset: $offset\n                    ) {\n                        result {\n                            total\n                            limit\n                            offset\n                        }\n                        items {\n                            targetEntity {\n                                _id\n                                title\n                                type\n                            }\n                            position\n                        }\n                    }\n                }\n            '], ['\n                query getRelatedEntities ($sourceEntityID: String!, $relationship: String!, $type: String, $direction: String, $limit: Int, $offset: Int) {\n                    getRelatedEntities (\n                        sourceEntityID: $sourceEntityID,\n                        relationship: $relationship,\n                        type: $type,\n                        direction: $direction,\n                        limit: $limit,\n                        offset: $offset\n                    ) {\n                        result {\n                            total\n                            limit\n                            offset\n                        }\n                        items {\n                            targetEntity {\n                                _id\n                                title\n                                type\n                            }\n                            position\n                        }\n                    }\n                }\n            ']),
+    _templateObject14 = _taggedTemplateLiteral(['\n                mutation prepareFileUpload($entityID: String!, $filename: String!, $type: String, $filesize: Int!) {\n                    prepareFileUpload(\n                        entityID: $entityID,\n                        filename: $filename,\n                        type: $type,\n                        filesize: $filesize\n                    )\n                }\n            '], ['\n                mutation prepareFileUpload($entityID: String!, $filename: String!, $type: String, $filesize: Int!) {\n                    prepareFileUpload(\n                        entityID: $entityID,\n                        filename: $filename,\n                        type: $type,\n                        filesize: $filesize\n                    )\n                }\n            ']),
+    _templateObject15 = _taggedTemplateLiteral(['\n                mutation appendFileChunk($entityID: String!) {\n                    appendFileChunk(\n                        entityID: $entityID\n                    )\n                }\n            '], ['\n                mutation appendFileChunk($entityID: String!) {\n                    appendFileChunk(\n                        entityID: $entityID\n                    )\n                }\n            ']);
 
 var _apolloClient = require('apollo-client');
 
@@ -9594,6 +9592,8 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 function _taggedTemplateLiteral(strings, raw) { return Object.freeze(Object.defineProperties(strings, { raw: { value: Object.freeze(raw) } })); }
 
+function _asyncToGenerator(fn) { return function () { var gen = fn.apply(this, arguments); return new Promise(function (resolve, reject) { function step(key, arg) { try { var info = gen[key](arg); var value = info.value; } catch (error) { reject(error); return; } if (info.done) { resolve(value); } else { return Promise.resolve(value).then(function (value) { step("next", value); }, function (err) { step("throw", err); }); } } return step("next"); }); }; }
+
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var slice = function slice(file, start, end) {
@@ -9602,10 +9602,29 @@ var slice = function slice(file, start, end) {
     return slice.bind(file)(start, end);
 };
 
+var createClient = function createClient(uri, auth) {
+    var networkInterface = (0, _networkInterface.createNetworkInterface)({ uri: uri });
+
+    networkInterface.use([{
+        applyMiddleware: function applyMiddleware(req, next) {
+            if (auth !== null) {
+                if (!req.options.headers) {
+                    req.options.headers = {}; // Create the header object if needed.
+                }
+                req.options.headers.authorization = 'Basic ' + auth;
+            }
+            next();
+        }
+    }]);
+
+    return new _apolloClient.ApolloClient({
+        fetchPolicy: 'network-only',
+        networkInterface: networkInterface
+    });
+};
+
 var ZenttyClient = function () {
     function ZenttyClient() {
-        var _this = this;
-
         var cfg = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
         _classCallCheck(this, ZenttyClient);
@@ -9617,40 +9636,31 @@ var ZenttyClient = function () {
             this.auth = this.getStoredToken();
         }
 
-        var uri = cfg.uri || null;
+        this.uri = cfg.uri || null;
 
-        if (uri === null) {
+        if (this.uri === null) {
             throw new Error("EntityModelClient must contain a server uri");
         }
 
-        var networkInterface = (0, _networkInterface.createNetworkInterface)({ uri: uri });
-
-        networkInterface.use([{
-            applyMiddleware: function applyMiddleware(req, next) {
-                if (_this.auth !== null) {
-                    if (!req.options.headers) {
-                        req.options.headers = {}; // Create the header object if needed.
-                    }
-                    req.options.headers.authorization = 'Basic ' + _this.auth;
-                }
-                next();
-            }
-        }]);
-
-        this.client = new _apolloClient.ApolloClient({
-            networkInterface: networkInterface
-        });
+        this.client = createClient(this.uri, this.auth);
     }
 
+    // Since apollo-client has no way to clear the cache, we can free memory by
+    // creating a new apollo client
+
+
     _createClass(ZenttyClient, [{
+        key: 'clearCache',
+        value: function clearCache() {
+            this.client = createClient(this.uri, this.auth);
+        }
+    }, {
         key: 'getStoredToken',
         value: function getStoredToken() {
-            try {
-                if (typeof localStorage !== 'undefined') {
-                    return localStorage.getItem('auth_token');
-                }
-            } catch (ex) {
-                console.error(ex);
+            if (typeof localStorage !== 'undefined') {
+                return localStorage.getItem('auth_token') || null;
+            } else {
+                return null;
             }
         }
     }, {
@@ -9669,13 +9679,19 @@ var ZenttyClient = function () {
             }
         }
     }, {
-        key: 'getSessionCode',
-        value: function getSessionCode() {
+        key: 'getAuth',
+        value: function getAuth() {
             if (this.auth === null) {
                 this.auth = this.getStoredToken();
             }
 
             return this.auth;
+        }
+    }, {
+        key: 'setAuth',
+        value: function setAuth(authCode) {
+            this.auth = authCode;
+            this.setStoredToken(this.auth);
         }
     }, {
         key: 'setSessionCode',
@@ -9687,6 +9703,17 @@ var ZenttyClient = function () {
                 this.auth = _base2.default.encode(sessionCode + ':');
                 this.setStoredToken(this.auth);
             }
+            this.clearCache();
+        }
+    }, {
+        key: 'mutate',
+        value: function mutate(mutation) {
+            return this.client.mutate(mutation);
+        }
+    }, {
+        key: 'query',
+        value: function query(_query) {
+            return this.client.query(_query);
         }
 
         /**
@@ -9700,24 +9727,40 @@ var ZenttyClient = function () {
 
     }, {
         key: 'registerUser',
-        value: function registerUser(params) {
-            var _this2 = this;
+        value: function () {
+            var _ref = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee(params) {
+                var _ref2, user;
 
-            return new Promise(function (fulfill, reject) {
-                _this2.client.mutate({
-                    mutation: (0, _graphqlTag2.default)(_templateObject),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    if (result.data.registerUser.errors !== null) {
-                        reject(result.data.registerUser.errors);
-                    } else {
-                        fulfill(result.data.registerUser.user);
+                return regeneratorRuntime.wrap(function _callee$(_context) {
+                    while (1) {
+                        switch (_context.prev = _context.next) {
+                            case 0:
+                                _context.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref2 = _context.sent;
+                                user = _ref2.data.registerUser;
+                                return _context.abrupt('return', user);
+
+                            case 5:
+                            case 'end':
+                                return _context.stop();
+                        }
                     }
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                }, _callee, this);
+            }));
+
+            function registerUser(_x2) {
+                return _ref.apply(this, arguments);
+            }
+
+            return registerUser;
+        }()
 
         /**
          * params {
@@ -9728,200 +9771,457 @@ var ZenttyClient = function () {
 
     }, {
         key: 'loginUser',
-        value: function loginUser(params) {
-            var _this3 = this;
+        value: function () {
+            var _ref3 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee2(params) {
+                var _ref4, loginSession;
 
-            return new Promise(function (fulfill, reject) {
-                _this3.client.mutate({
-                    mutation: (0, _graphqlTag2.default)(_templateObject2),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    if (result.data.loginUser.errors !== null) {
-                        reject(result.data.loginUser.errors);
-                    } else {
-                        var loginSession = result.data.loginUser.loginSession;
-                        _this3.setSessionCode(loginSession.sessionCode);
-                        fulfill(loginSession);
+                return regeneratorRuntime.wrap(function _callee2$(_context2) {
+                    while (1) {
+                        switch (_context2.prev = _context2.next) {
+                            case 0:
+                                _context2.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject2),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref4 = _context2.sent;
+                                loginSession = _ref4.data.loginUser;
+
+
+                                this.setSessionCode(loginSession.sessionCode);
+
+                                return _context2.abrupt('return', loginSession);
+
+                            case 6:
+                            case 'end':
+                                return _context2.stop();
+                        }
                     }
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                }, _callee2, this);
+            }));
+
+            function loginUser(_x3) {
+                return _ref3.apply(this, arguments);
+            }
+
+            return loginUser;
+        }()
     }, {
         key: 'getUser',
-        value: function getUser() {
-            var _this4 = this;
+        value: function () {
+            var _ref5 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee3() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
-            return new Promise(function (fulfill, reject) {
-                _this4.client.query({
-                    fetchPolicy: 'network-only',
-                    query: (0, _graphqlTag2.default)(_templateObject3)
-                }).then(function (result) {
-                    fulfill(result.data.getUser);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                var _ref6, user;
+
+                return regeneratorRuntime.wrap(function _callee3$(_context3) {
+                    while (1) {
+                        switch (_context3.prev = _context3.next) {
+                            case 0:
+                                _context3.next = 2;
+                                return this.client.query({
+                                    query: (0, _graphqlTag2.default)(_templateObject3),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref6 = _context3.sent;
+                                user = _ref6.data.getUser;
+                                return _context3.abrupt('return', user);
+
+                            case 5:
+                            case 'end':
+                                return _context3.stop();
+                        }
+                    }
+                }, _callee3, this);
+            }));
+
+            function getUser() {
+                return _ref5.apply(this, arguments);
+            }
+
+            return getUser;
+        }()
     }, {
         key: 'logoutUser',
-        value: function logoutUser() {
-            var _this5 = this;
+        value: function () {
+            var _ref7 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee4(params) {
+                return regeneratorRuntime.wrap(function _callee4$(_context4) {
+                    while (1) {
+                        switch (_context4.prev = _context4.next) {
+                            case 0:
+                                _context4.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject4),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
 
-            var sessionCode = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : null;
+                            case 2:
 
-            return new Promise(function (fulfill, reject) {
-                _this5.client.mutate({
-                    mutation: (0, _graphqlTag2.default)(_templateObject4),
-                    variables: {
-                        sessionCode: sessionCode
+                                this.setSessionCode(null);
+
+                            case 3:
+                            case 'end':
+                                return _context4.stop();
+                        }
                     }
-                }).then(function (result) {
-                    var success = result.data.logoutUser;
+                }, _callee4, this);
+            }));
 
-                    if (success === true) {
-                        _this5.setSessionCode(null);
-                    }
+            function logoutUser(_x5) {
+                return _ref7.apply(this, arguments);
+            }
 
-                    fulfill(success);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
-
-        /**
-         * params {
-         *   type: String!
-         *   title: String
-         *   body: String
-         *   metadata: Object
-         *   scopeID: String
-         *   parentID: String
-         * }
-         */
-
+            return logoutUser;
+        }()
     }, {
         key: 'createEntity',
-        value: function createEntity(params) {
-            var _this6 = this;
+        value: function () {
+            var _ref8 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee5() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
-            return new Promise(function (fulfill, reject) {
-                _this6.client.mutate({
-                    mutation: (0, _graphqlTag2.default)(_templateObject5),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    fulfill(result.data.createEntity);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                var _ref9, entity;
 
-        /**
-         * params {
-         *      id: String!
-         * }
-         */
+                return regeneratorRuntime.wrap(function _callee5$(_context5) {
+                    while (1) {
+                        switch (_context5.prev = _context5.next) {
+                            case 0:
+                                _context5.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject5),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
 
+                            case 2:
+                                _ref9 = _context5.sent;
+                                entity = _ref9.data.createEntity;
+                                return _context5.abrupt('return', entity);
+
+                            case 5:
+                            case 'end':
+                                return _context5.stop();
+                        }
+                    }
+                }, _callee5, this);
+            }));
+
+            function createEntity() {
+                return _ref8.apply(this, arguments);
+            }
+
+            return createEntity;
+        }()
     }, {
         key: 'getEntity',
-        value: function getEntity(params) {
-            var _this7 = this;
+        value: function () {
+            var _ref10 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee6() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
-            return new Promise(function (fulfill, reject) {
-                _this7.client.query({
-                    query: (0, _graphqlTag2.default)(_templateObject6),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    fulfill(result.data.getEntity);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                var _ref11, entity;
 
-        /**
-         * params {
-         *   id: String!
-         *   title: String
-         *   body: String
-         *   metadata: Object
-         * }
-         */
+                return regeneratorRuntime.wrap(function _callee6$(_context6) {
+                    while (1) {
+                        switch (_context6.prev = _context6.next) {
+                            case 0:
+                                _context6.next = 2;
+                                return this.client.query({
+                                    query: (0, _graphqlTag2.default)(_templateObject6),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
 
+                            case 2:
+                                _ref11 = _context6.sent;
+                                entity = _ref11.data.getEntity;
+                                return _context6.abrupt('return', entity);
+
+                            case 5:
+                            case 'end':
+                                return _context6.stop();
+                        }
+                    }
+                }, _callee6, this);
+            }));
+
+            function getEntity() {
+                return _ref10.apply(this, arguments);
+            }
+
+            return getEntity;
+        }()
     }, {
         key: 'modifyEntity',
-        value: function modifyEntity(params) {
-            var _this8 = this;
+        value: function () {
+            var _ref12 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee7() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
-            return new Promise(function (fulfill, reject) {
-                _this8.client.mutate({
-                    mutation: (0, _graphqlTag2.default)(_templateObject7),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    fulfill(result.data.modifyEntity);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                var _ref13, entity;
 
-        /**
-         * params {
-         *     parentID: String!
-         *     childType: String
-         *     limit: Int
-         *     offset: Int
-         * }
-         */
+                return regeneratorRuntime.wrap(function _callee7$(_context7) {
+                    while (1) {
+                        switch (_context7.prev = _context7.next) {
+                            case 0:
+                                _context7.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject7),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
 
+                            case 2:
+                                _ref13 = _context7.sent;
+                                entity = _ref13.data.modifyEntity;
+                                return _context7.abrupt('return', entity);
+
+                            case 5:
+                            case 'end':
+                                return _context7.stop();
+                        }
+                    }
+                }, _callee7, this);
+            }));
+
+            function modifyEntity() {
+                return _ref12.apply(this, arguments);
+            }
+
+            return modifyEntity;
+        }()
+    }, {
+        key: 'archiveEntity',
+        value: function () {
+            var _ref14 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee8() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+                var _ref15, entity;
+
+                return regeneratorRuntime.wrap(function _callee8$(_context8) {
+                    while (1) {
+                        switch (_context8.prev = _context8.next) {
+                            case 0:
+                                _context8.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject8),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref15 = _context8.sent;
+                                entity = _ref15.data.archiveEntity;
+                                return _context8.abrupt('return', entity);
+
+                            case 5:
+                            case 'end':
+                                return _context8.stop();
+                        }
+                    }
+                }, _callee8, this);
+            }));
+
+            function archiveEntity() {
+                return _ref14.apply(this, arguments);
+            }
+
+            return archiveEntity;
+        }()
+    }, {
+        key: 'unarchiveEntity',
+        value: function () {
+            var _ref16 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee9() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+                var _ref17, entity;
+
+                return regeneratorRuntime.wrap(function _callee9$(_context9) {
+                    while (1) {
+                        switch (_context9.prev = _context9.next) {
+                            case 0:
+                                _context9.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject9),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref17 = _context9.sent;
+                                entity = _ref17.data.unarchiveEntity;
+                                return _context9.abrupt('return', entity);
+
+                            case 5:
+                            case 'end':
+                                return _context9.stop();
+                        }
+                    }
+                }, _callee9, this);
+            }));
+
+            function unarchiveEntity() {
+                return _ref16.apply(this, arguments);
+            }
+
+            return unarchiveEntity;
+        }()
+    }, {
+        key: 'relateEntity',
+        value: function () {
+            var _ref18 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee10() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+                var _ref19, success;
+
+                return regeneratorRuntime.wrap(function _callee10$(_context10) {
+                    while (1) {
+                        switch (_context10.prev = _context10.next) {
+                            case 0:
+                                _context10.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject10),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref19 = _context10.sent;
+                                success = _ref19.data.relateEntity;
+                                return _context10.abrupt('return', success);
+
+                            case 5:
+                            case 'end':
+                                return _context10.stop();
+                        }
+                    }
+                }, _callee10, this);
+            }));
+
+            function relateEntity() {
+                return _ref18.apply(this, arguments);
+            }
+
+            return relateEntity;
+        }()
+    }, {
+        key: 'unrelateEntity',
+        value: function () {
+            var _ref20 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee11() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+                var _ref21, success;
+
+                return regeneratorRuntime.wrap(function _callee11$(_context11) {
+                    while (1) {
+                        switch (_context11.prev = _context11.next) {
+                            case 0:
+                                _context11.next = 2;
+                                return this.client.mutate({
+                                    mutation: (0, _graphqlTag2.default)(_templateObject11),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref21 = _context11.sent;
+                                success = _ref21.data.unrelateEntity;
+                                return _context11.abrupt('return', success);
+
+                            case 5:
+                            case 'end':
+                                return _context11.stop();
+                        }
+                    }
+                }, _callee11, this);
+            }));
+
+            function unrelateEntity() {
+                return _ref20.apply(this, arguments);
+            }
+
+            return unrelateEntity;
+        }()
     }, {
         key: 'getEntities',
-        value: function getEntities(params) {
-            var _this9 = this;
+        value: function () {
+            var _ref22 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee12() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
-            return new Promise(function (fulfill, reject) {
-                _this9.client.query({
-                    fetchPolicy: 'network-only',
-                    query: (0, _graphqlTag2.default)(_templateObject8),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    fulfill(result.data.getEntities);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                var _ref23, entities;
 
-        /**
-         * params {
-         *   soureEntityID: String!
-         *   relationship: String!
-         *   direction: [source|target] default target
-         *   limit: Int
-         *   offset: Int
-         * }
-         */
+                return regeneratorRuntime.wrap(function _callee12$(_context12) {
+                    while (1) {
+                        switch (_context12.prev = _context12.next) {
+                            case 0:
+                                _context12.next = 2;
+                                return this.client.query({
+                                    query: (0, _graphqlTag2.default)(_templateObject12),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
 
+                            case 2:
+                                _ref23 = _context12.sent;
+                                entities = _ref23.data.getEntities;
+                                return _context12.abrupt('return', entities);
+
+                            case 5:
+                            case 'end':
+                                return _context12.stop();
+                        }
+                    }
+                }, _callee12, this);
+            }));
+
+            function getEntities() {
+                return _ref22.apply(this, arguments);
+            }
+
+            return getEntities;
+        }()
     }, {
         key: 'getRelatedEntities',
-        value: function getRelatedEntities(params) {
-            var _this10 = this;
+        value: function () {
+            var _ref24 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee13() {
+                var params = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
-            return new Promise(function (fulfill, reject) {
-                _this10.client.query({
-                    fetchPolicy: 'network-only',
-                    query: (0, _graphqlTag2.default)(_templateObject9),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    fulfill(result.data.getRelatedEntities);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                var _ref25, entities;
+
+                return regeneratorRuntime.wrap(function _callee13$(_context13) {
+                    while (1) {
+                        switch (_context13.prev = _context13.next) {
+                            case 0:
+                                _context13.next = 2;
+                                return this.client.query({
+                                    query: (0, _graphqlTag2.default)(_templateObject13),
+                                    variables: Object.assign({}, params),
+                                    fetchPolicy: 'network-only'
+                                });
+
+                            case 2:
+                                _ref25 = _context13.sent;
+                                entities = _ref25.data.getRelatedEntities;
+                                return _context13.abrupt('return', entities);
+
+                            case 5:
+                            case 'end':
+                                return _context13.stop();
+                        }
+                    }
+                }, _callee13, this);
+            }));
+
+            function getRelatedEntities() {
+                return _ref24.apply(this, arguments);
+            }
+
+            return getRelatedEntities;
+        }()
 
         /**
          * params {
@@ -9934,20 +10234,40 @@ var ZenttyClient = function () {
 
     }, {
         key: 'prepareFileUpload',
-        value: function prepareFileUpload(params) {
-            var _this11 = this;
+        value: function () {
+            var _ref26 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee14(params) {
+                var _ref27, success;
 
-            return new Promise(function (fulfill, reject) {
-                _this11.client.mutate({
-                    mutation: (0, _graphqlTag2.default)(_templateObject10),
-                    variables: _extends({}, params)
-                }).then(function (result) {
-                    fulfill(result.data.prepareFileUpload);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                return regeneratorRuntime.wrap(function _callee14$(_context14) {
+                    while (1) {
+                        switch (_context14.prev = _context14.next) {
+                            case 0:
+                                _context14.next = 2;
+                                return this.client.mutate({
+                                    fetchPolicy: 'network-only',
+                                    mutation: (0, _graphqlTag2.default)(_templateObject14),
+                                    variables: Object.assign({}, params)
+                                });
+
+                            case 2:
+                                _ref27 = _context14.sent;
+                                success = _ref27.data.prepareFileUpload;
+                                return _context14.abrupt('return', success);
+
+                            case 5:
+                            case 'end':
+                                return _context14.stop();
+                        }
+                    }
+                }, _callee14, this);
+            }));
+
+            function prepareFileUpload(_x15) {
+                return _ref26.apply(this, arguments);
+            }
+
+            return prepareFileUpload;
+        }()
 
         /**
          * params {
@@ -9958,50 +10278,43 @@ var ZenttyClient = function () {
 
     }, {
         key: 'appendFileChunk',
-        value: function appendFileChunk(params) {
-            var _this12 = this;
+        value: function () {
+            var _ref28 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee15(params) {
+                var _ref29, isComplete;
 
-            return new Promise(function (fulfill, reject) {
-                _this12.client.mutate({
-                    mutation: (0, _graphqlTag2.default)(_templateObject11),
-                    variables: {
-                        entityID: params.entityID,
-                        _chunk: params.chunk
+                return regeneratorRuntime.wrap(function _callee15$(_context15) {
+                    while (1) {
+                        switch (_context15.prev = _context15.next) {
+                            case 0:
+                                _context15.next = 2;
+                                return this.client.mutate({
+                                    fetchPolicy: 'network-only',
+                                    mutation: (0, _graphqlTag2.default)(_templateObject15),
+                                    variables: {
+                                        entityID: params.entityID,
+                                        _chunk: params.chunk
+                                    }
+                                });
+
+                            case 2:
+                                _ref29 = _context15.sent;
+                                isComplete = _ref29.data.appendFileChunk;
+                                return _context15.abrupt('return', isComplete);
+
+                            case 5:
+                            case 'end':
+                                return _context15.stop();
+                        }
                     }
-                }).then(function (result) {
-                    fulfill(result.data.appendFileChunk);
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
-    }, {
-        key: '_uploadFileChunk',
-        value: function _uploadFileChunk(entityID, file, start, chunkSize, fn) {
-            var _this13 = this;
+                }, _callee15, this);
+            }));
 
-            var end = Math.min(start + chunkSize, file.size);
-            var chunk = slice(file, start, end);
+            function appendFileChunk(_x16) {
+                return _ref28.apply(this, arguments);
+            }
 
-            this.appendFileChunk({
-                entityID: entityID,
-                chunk: chunk
-            }).then(function (isComplete) {
-                var progress = {
-                    complete: isComplete,
-                    bytesUploaded: end,
-                    totalBytes: file.size
-                };
-
-                fn(null, progress);
-
-                if (!isComplete) {
-                    _this13._uploadFileChunk(entityID, file, end, chunkSize, fn);
-                }
-            }).catch(function (err) {
-                return fn(err);
-            });
-        }
+            return appendFileChunk;
+        }()
 
         /**
          * params {
@@ -10012,47 +10325,89 @@ var ZenttyClient = function () {
 
     }, {
         key: 'uploadFile',
-        value: function uploadFile(params) {
-            var _this14 = this;
+        value: function () {
+            var _ref31 = _asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee16(_ref30) {
+                var _ref30$entityID = _ref30.entityID,
+                    entityID = _ref30$entityID === undefined ? null : _ref30$entityID,
+                    _ref30$file = _ref30.file,
+                    file = _ref30$file === undefined ? null : _ref30$file;
+                var fn = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : function () {};
+                var done, start, end, chunk, progress, chunkSize;
+                return regeneratorRuntime.wrap(function _callee16$(_context16) {
+                    while (1) {
+                        switch (_context16.prev = _context16.next) {
+                            case 0:
+                                if (!(entityID === null)) {
+                                    _context16.next = 2;
+                                    break;
+                                }
 
-            var fn = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : function () {};
+                                throw 'Entity ID missing';
 
-            return new Promise(function (fulfill, reject) {
-                var id = params.entityID || null;
-                var file = params.file || null;
+                            case 2:
+                                if (!(file === null)) {
+                                    _context16.next = 4;
+                                    break;
+                                }
 
-                if (id === null) {
-                    reject('Entity ID missing');
-                }
+                                throw 'File missing';
 
-                if (file === null) {
-                    reject('File missing');
-                }
+                            case 4:
+                                _context16.next = 6;
+                                return this.prepareFileUpload({
+                                    entityID: entityID,
+                                    filename: file.name,
+                                    filesize: file.size
+                                });
 
-                // Prepare the file
-                _this14.prepareFileUpload({
-                    entityID: params.entityID,
-                    filename: file.name,
-                    filesize: file.size
-                }).then(function () {
-                    // The file has been prepared, lets start uploading the chunks
-                    _this14._uploadFileChunk(id, file, 0, 200 * 1024, function (err, progress) {
-                        if (err) {
-                            reject(err);
-                        } else {
-                            // Share the progress
-                            fn(progress);
+                            case 6:
+                                done = false;
+                                start = 0;
+                                end = void 0, chunk = void 0, progress = void 0;
+                                chunkSize = 200 * 1024;
 
-                            if (progress.complete) {
-                                fulfill();
-                            }
+                            case 10:
+                                if (done) {
+                                    _context16.next = 21;
+                                    break;
+                                }
+
+                                end = Math.min(start + chunkSize, file.size);
+                                chunk = slice(file, start, end);
+                                // Do the upload
+                                _context16.next = 15;
+                                return this.appendFileChunk({ entityID: entityID, chunk: chunk });
+
+                            case 15:
+                                done = _context16.sent;
+
+
+                                progress = {
+                                    complete: done,
+                                    bytesUploaded: end,
+                                    totalBytes: file.size
+                                };
+
+                                fn(progress); // Call out notification
+
+                                start = end;
+                                _context16.next = 10;
+                                break;
+
+                            case 21:
+                            case 'end':
+                                return _context16.stop();
                         }
-                    });
-                }).catch(function (err) {
-                    return reject(err);
-                });
-            });
-        }
+                    }
+                }, _callee16, this);
+            }));
+
+            function uploadFile(_x18) {
+                return _ref31.apply(this, arguments);
+            }
+
+            return uploadFile;
+        }()
     }]);
 
     return ZenttyClient;
@@ -10064,7 +10419,7 @@ if (typeof window !== 'undefined') {
 
 exports.default = ZenttyClient;
 
-},{"./network-interface":51,"apollo-client":1,"base-64":5,"graphql-tag":12}],51:[function(require,module,exports){
+},{"./network-interface":51,"apollo-client":1,"base-64":7,"graphql-tag":15}],51:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -10072,11 +10427,7 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.UploadHTTPFetchNetworkInterface = undefined;
 
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _get = function get(object, property, receiver) { if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { return get(parent, property, receiver); } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } };
 
 exports.createNetworkInterface = createNetworkInterface;
 
@@ -10110,26 +10461,31 @@ var UploadHTTPFetchNetworkInterface = exports.UploadHTTPFetchNetworkInterface = 
             var request = _ref.request,
                 options = _ref.options;
 
-            if (request.variables && request.variables._chunk) {
-                var formData = new _isomorphicFormData2.default();
-                formData.append('operationName', request.operationName || '');
-                //formData.append('operations', JSON.stringify(request));
+            //if (request.variables && request.variables._chunk) {
+            var formData = new _isomorphicFormData2.default();
+            formData.append('operationName', request.operationName || '');
+
+            //formData.append('operations', JSON.stringify(request));
+            if (request.variables._chunk) {
                 formData.append('chunk', request.variables._chunk);
-                formData.append('debugName', JSON.stringify(request.debugName || ''));
-                formData.append('query', (0, _apolloClient.printAST)(request.query));
-
-                var variables = _extends({}, request.variables);
-                delete variables._chunk;
-                formData.append('variables', JSON.stringify(variables));
-
-                return fetch(this._uri, _extends({
-                    method: 'POST',
-                    body: formData
-                }, options));
             }
 
+            formData.append('debugName', JSON.stringify(request.debugName || ''));
+            formData.append('query', (0, _apolloClient.printAST)(request.query));
+
+            var variables = Object.assign({}, request.variables);
+            delete variables._chunk;
+            formData.append('variables', JSON.stringify(variables));
+
+            return fetch(this._uri, Object.assign({
+                method: 'POST',
+                body: formData,
+                credentials: 'include'
+            }, options));
+            //}
+
             // Standard fetch method fallback
-            return _get(UploadHTTPFetchNetworkInterface.prototype.__proto__ || Object.getPrototypeOf(UploadHTTPFetchNetworkInterface.prototype), 'fetchFromRemoteEndpoint', this).call(this, { request: request, options: options });
+            //return super.fetchFromRemoteEndpoint({ request, options })
         }
     }]);
 
@@ -10144,4 +10500,4 @@ function createNetworkInterface(_ref2) {
     return new UploadHTTPFetchNetworkInterface(uri, opts);
 }
 
-},{"apollo-client":1,"isomorphic-form-data":26}]},{},[50]);
+},{"apollo-client":1,"isomorphic-form-data":27}]},{},[50]);

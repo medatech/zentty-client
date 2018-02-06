@@ -333,6 +333,42 @@ class ZenttyClient {
         return entity;
     }
     
+    async archiveEntity (params = {}) {
+        const { data: { archiveEntity: entity }} = await this.client.mutate({
+            mutation: gql`
+                mutation archiveEntity($id: String!) {
+                    archiveEntity(
+                        id: $id
+                    )
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return entity;
+    }
+    
+    async unarchiveEntity (params = {}) {
+        const { data: { unarchiveEntity: entity }} = await this.client.mutate({
+            mutation: gql`
+                mutation unarchiveEntity($id: String!) {
+                    unarchiveEntity(
+                        id: $id
+                    )
+                }
+            `,
+            variables: {
+                ...params
+            },
+            fetchPolicy: 'network-only'
+        });
+        
+        return entity;
+    }
+    
     async relateEntity (params = {}) {
         const { data: { relateEntity: success }} = await this.client.mutate({
             mutation: gql`
